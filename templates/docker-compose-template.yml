@@ -1,0 +1,52 @@
+version: '3.2'
+
+services:
+  couchdb:
+    container_name: {couchdb_container_name}
+    image: couchdb:{couchdb_version}
+    ports:
+      - 5984:{couchdb_port}
+    environment:
+      COUCHDB_USER: {couchdb_admin_username}
+      COUCHDB_PASSWORD: {couchdb_admin_password}
+  initializer:
+      container_name: {couchdb_container_name}-initalizer
+      image: curlimages/curl
+      deploy:
+        restart_policy:
+          condition: on-failure
+      depends_on:
+        - couchdb
+      command: ["sh","/couchdb-initializer.sh"]
+      volumes:
+        - type: bind
+          source: ./{result_couchdb_intiailizer_script_path}
+          target: /couchdb-initializer.sh
+  ipfs:
+    container_name: {ipfs_container_name}
+    image: ipfs/kubo:{ipfs_version}
+    ports:
+      - 5001:{ipfs_rpc_port}
+      - 8080:{ipfs_webui_port}
+      - 4001:{ipfs_node_port}
+      - 4001:{ipfs_node_port}/udp
+    volumes:
+      - type: volume
+        source: ipfs-export-volume
+        target: /export
+      - type: volume
+        source: ipfs-data-volume
+        target: /data/ipfs
+    environment:
+      IPFS_PROFILE: server
+  nginx:
+    container_name: MoonStorage-Nginx
+    build:
+      context: .
+      dockerfile: {result_nginx_dockerfile_path}
+    ports:
+      - 80:{nginx_webui_port}
+
+volumes:
+  ipfs-export-volume:
+  ipfs-data-volume:

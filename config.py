@@ -39,3 +39,6 @@ result_nginx_conf_path = 'nginx.conf'
 
 nginx_dockerfile_template_path = os.path.join('templates', 'nginx-dockerfile')
 result_nginx_dockerfile_path = 'nginx-dockerfile'
+
+couchdb_initializer_script_path = os.path.join('templates', 'couchdb-initializer.sh')
+result_couchdb_initializer_script_path = 'couchdb-initializer.sh'

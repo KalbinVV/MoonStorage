@@ -122,7 +122,8 @@ def run_setup_cli():
                             result_nginx_dockerfile_path=config.result_nginx_dockerfile_path,
                             nginx_webui_port=nginx_webui_port,
                             nginx_container_name=nginx_container_name,
-                            ipfs_node_port=ipfs_node_port)
+                            ipfs_node_port=ipfs_node_port,
+                            result_couchdb_intiailizer_script_path=config.result_couchdb_initializer_script_path)
 
     make_file_from_template_with_replace(config.nginx_conf_template_path,
                                          config.result_nginx_conf_path,
@@ -130,6 +131,12 @@ def run_setup_cli():
 
     make_file_from_template(config.nginx_dockerfile_template_path,
                             config.result_nginx_dockerfile_path)
+
+    make_file_from_template(config.couchdb_initializer_script_path,
+                            config.result_couchdb_initializer_script_path,
+                            couchdb_port=couchdb_port,
+                            couchdb_admin_username=couchdb_admin_username,
+                            couchdb_admin_password=couchdb_admin_password)
 
 
 if __name__ == '__main__':
