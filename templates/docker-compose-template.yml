@@ -5,7 +5,7 @@ services:
     container_name: {couchdb_container_name}
     image: couchdb:{couchdb_version}
     ports:
-      - 5984:{couchdb_port}
+      - {couchdb_port}:5984
     environment:
       COUCHDB_USER: {couchdb_admin_username}
       COUCHDB_PASSWORD: {couchdb_admin_password}
@@ -26,10 +26,10 @@ services:
     container_name: {ipfs_container_name}
     image: ipfs/kubo:{ipfs_version}
     ports:
-      - 5001:{ipfs_rpc_port}
-      - 8080:{ipfs_webui_port}
-      - 4001:{ipfs_node_port}
-      - 4001:{ipfs_node_port}/udp
+      - {ipfs_rpc_port}:5001
+      - {ipfs_webui_port}:8080
+      - {ipfs_node_port}:4001
+      - {ipfs_node_port}/udp:4001
     volumes:
       - type: volume
         source: ipfs-export-volume
@@ -45,7 +45,7 @@ services:
       context: .
       dockerfile: {result_nginx_dockerfile_path}
     ports:
-      - 80:{nginx_webui_port}
+      - {nginx_webui_port}:80
 
 volumes:
   ipfs-export-volume:
