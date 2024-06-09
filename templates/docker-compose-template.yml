@@ -29,7 +29,7 @@ services:
       - {ipfs_rpc_port}:5001
       - {ipfs_webui_port}:8080
       - {ipfs_node_port}:4001
-      - {ipfs_node_port}/udp:4001
+      - {ipfs_node_port}:4001/udp
     volumes:
       - type: volume
         source: ipfs-export-volume
