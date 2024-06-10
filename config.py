@@ -27,6 +27,11 @@ default_node_ipfs_port = 4001
 default_ipfs_version = 'latest'
 default_ipfs_export_path = './export'
 default_ipfs_data_path = './data'
+default_ipfs_host = '127.0.0.1'
+
+ipfs_scripts_folder_path = 'ipfs-scripts'
+ipfs_init_script_path = os.path.join(os.path.join('templates', 'ipfs-scripts'), 'ipfs-node-init.sh')
+ipfs_init_result_path = os.path.join(os.path.join('ipfs-scripts', 'ipfs-node-init.sh'))
 
 default_nginx_container_name = 'MoonStorage-Nginx'
 default_nginx_webui_port = 80

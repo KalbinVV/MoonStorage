@@ -21,7 +21,9 @@
       "version-input": "Введите версию для IPFS ({default_version}): ",
       "export-folder-name-input": "Введите путь для папки ipfs_staging ({default_path}): ",
       "data-folder-name-input": "Введите путь для папки ipfs_data ({default_path}): ",
-      "node-port-input": "Введите порт для узла IPFS ({default_port}): "
+      "node-port-input": "Введите порт для узла IPFS ({default_port}): ",
+      "node-id-input": "Введите уникальный ID для узла IPFS ({random_id}): ",
+      "node-host-input": "Введите хост для узла IPFS ({default_host}): "
     },
 
     "nginx": {

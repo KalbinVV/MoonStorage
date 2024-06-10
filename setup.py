@@ -1,4 +1,7 @@
+import os
+
 import config
+import utils
 from translations.translation import TranslationFile
 
 
@@ -99,6 +102,10 @@ def run_setup_cli():
                                     config.default_ipfs_data_path,
                                     default_path=config.default_ipfs_data_path)
 
+    ipfs_peer_id_addr = _enter_value('setup.ipfs.node-host-input',
+                                     config.default_ipfs_host,
+                                     default_host=config.default_ipfs_host)
+
     nginx_container_name = _enter_value('setup.nginx.container-name-input',
                                         config.default_nginx_container_name,
                                         default_container_name=config.default_nginx_container_name)
@@ -123,7 +130,8 @@ def run_setup_cli():
                             nginx_webui_port=nginx_webui_port,
                             nginx_container_name=nginx_container_name,
                             ipfs_node_port=ipfs_node_port,
-                            result_couchdb_intiailizer_script_path=config.result_couchdb_initializer_script_path)
+                            result_couchdb_intiailizer_script_path=config.result_couchdb_initializer_script_path,
+                            ipfs_scripts_folder_path=config.ipfs_scripts_folder_path)
 
     make_file_from_template_with_replace(config.nginx_conf_template_path,
                                          config.result_nginx_conf_path,
@@ -137,6 +145,12 @@ def run_setup_cli():
                             couchdb_port=couchdb_port,
                             couchdb_admin_username=couchdb_admin_username,
                             couchdb_admin_password=couchdb_admin_password)
+
+    os.makedirs(config.ipfs_scripts_folder_path, exist_ok=True)
+
+    make_file_from_template(config.ipfs_init_script_path,
+                            config.ipfs_init_result_path,
+                            ipfs_peer_id_addr=ipfs_peer_id_addr)
 
 
 if __name__ == '__main__':
