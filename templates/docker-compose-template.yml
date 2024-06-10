@@ -37,6 +37,9 @@ services:
       - type: volume
         source: ipfs-data-volume
         target: /data/ipfs
+      - type: bind
+        source: ./swarm.key
+        target: /ipfs/swarm.key
     environment:
       IPFS_PROFILE: server
   nginx:
