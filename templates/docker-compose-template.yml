@@ -1,27 +1,14 @@
 version: '3.2'
 
 services:
-  couchdb:
-    container_name: {couchdb_container_name}
-    image: couchdb:{couchdb_version}
+  posgres:
+    container_name: {postgres_container_name}
+    image: postgres:{postgres_version}
     ports:
-      - {couchdb_port}:5984
+      - {postgres_port}:5432
     environment:
-      COUCHDB_USER: {couchdb_admin_username}
-      COUCHDB_PASSWORD: {couchdb_admin_password}
-  initializer:
-      container_name: {couchdb_container_name}-initalizer
-      image: curlimages/curl
-      deploy:
-        restart_policy:
-          condition: on-failure
-      depends_on:
-        - couchdb
-      command: ["sh","/couchdb-initializer.sh"]
-      volumes:
-        - type: bind
-          source: ./{result_couchdb_intiailizer_script_path}
-          target: /couchdb-initializer.sh
+      POSTGRES_USER: {postgres_admin_username}
+      POSTGRES_PASSWORD: {postgres_admin_password}
   ipfs:
     container_name: {ipfs_container_name}
     image: ipfs/kubo:{ipfs_version}
@@ -53,6 +40,8 @@ services:
       dockerfile: {result_nginx_dockerfile_path}
     ports:
       - {nginx_webui_port}:80
+    links:
+      - ipfs
 
 volumes:
   ipfs-export-volume:
