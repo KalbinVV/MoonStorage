@@ -4,6 +4,8 @@ import os
 import config
 from translations.translation import TranslationFile
 
+from typing import Callable
+
 
 def make_file_from_template(template_path: str,
                             result_file_path: str,
@@ -42,7 +44,7 @@ def run_setup_cli():
 
         return value
 
-    def _enter_value(key: str, default_value: str, **fields) -> str:
+    def _enter_value(key: str, default_value: str, check_func: Callable = lambda value: True, **fields) -> str:
         is_true_input = False
 
         value = ''
@@ -53,6 +55,10 @@ def run_setup_cli():
 
             value = _get_default_value_if_empty(value,
                                                 default_value)
+
+            if not check_func(value):
+                print(translation.get('setup.check_func_invalid'))
+                continue
 
             print(translation.get('setup.user-entered-value',
                                   user_input=value))
@@ -101,6 +107,10 @@ def run_setup_cli():
     ipfs_data_folder = _enter_value('setup.ipfs.data-folder-name-input',
                                     config.default_ipfs_data_path,
                                     default_path=config.default_ipfs_data_path)
+    ipfs_network_mode = _enter_value('setup.ipfs.network-mode-input',
+                                      config.default_ipfs_network_mode,
+                                      check_func=lambda value: value in {'private', 'public'},
+                                      default_mode=config.default_ipfs_network_mode)
 
     nginx_container_name = _enter_value('setup.nginx.container-name-input',
                                         config.default_nginx_container_name,
@@ -109,7 +119,9 @@ def run_setup_cli():
                                     config.default_nginx_webui_port,
                                     default_port=config.default_nginx_webui_port)
 
-    make_file_from_template(config.docker_compose_template_path,
+    docker_compose_path = config.docker_compose_template_private_path if ipfs_network_mode == 'private' else config.docker_compose_template_public_path
+
+    make_file_from_template(docker_compose_path,
                             config.result_docker_compose_path,
                             postgres_container_name=postgres_container_name,
                             postgres_version=postgres_version,

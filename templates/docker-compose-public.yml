@@ -1,0 +1,41 @@
+version: '3.2'
+
+services:
+  posgres:
+    container_name: {postgres_container_name}
+    image: postgres:{postgres_version}
+    ports:
+      - {postgres_port}:5432
+    environment:
+      POSTGRES_USER: {postgres_admin_username}
+      POSTGRES_PASSWORD: {postgres_admin_password}
+  ipfs:
+    container_name: {ipfs_container_name}
+    image: ipfs/kubo:{ipfs_version}
+    ports:
+      - {ipfs_rpc_port}:5001
+      - {ipfs_webui_port}:8080
+      - {ipfs_node_port}:4001
+      - {ipfs_node_port}:4001/udp
+    volumes:
+      - type: volume
+        source: ipfs-export-volume
+        target: /export
+      - type: volume
+        source: ipfs-data-volume
+        target: /data/ipfs
+    environment:
+      IPFS_PROFILE: server
+  nginx:
+    container_name: MoonStorage-Nginx
+    build:
+      context: .
+      dockerfile: {result_nginx_dockerfile_path}
+    ports:
+      - {nginx_webui_port}:80
+    links:
+      - ipfs
+
+volumes:
+  ipfs-export-volume:
+  ipfs-data-volume:
