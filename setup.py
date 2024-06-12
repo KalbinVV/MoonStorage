@@ -1,7 +1,7 @@
+import ipaddress
 import os
 
 import config
-import utils
 from translations.translation import TranslationFile
 
 
@@ -64,21 +64,21 @@ def run_setup_cli():
 
         return value
 
-    couchdb_container_name = _enter_value('setup.couchdb.container-name-input',
-                                          config.default_couchdb_container_name,
-                                          default_container_name=config.default_couchdb_container_name)
-    couchdb_version = _enter_value('setup.couchdb.version-input',
-                                   config.default_couchdb_version,
-                                   default_version=config.default_couchdb_version)
-    couchdb_port = _enter_value('setup.couchdb.port-input',
-                                config.default_couchdb_port,
-                                default_port=config.default_couchdb_port)
-    couchdb_admin_username = _enter_value('setup.couchdb.admin-username-input',
-                                          config.default_couchdb_username,
-                                          default_username=config.default_couchdb_username)
-    couchdb_admin_password = _enter_value('setup.couchdb.admin-password-input',
-                                          config.default_couchdb_password,
-                                          default_password=config.default_couchdb_password)
+    postgres_container_name = _enter_value('setup.postgres.container-name-input',
+                                          config.default_postgres_container_name,
+                                          default_container_name=config.default_postgres_container_name)
+    postgres_version = _enter_value('setup.postgres.version-input',
+                                   config.default_postgres_version,
+                                   default_version=config.default_postgres_version)
+    postgres_port = _enter_value('setup.postgres.port-input',
+                                config.default_postgres_port,
+                                default_port=config.default_postgres_port)
+    postgres_admin_username = _enter_value('setup.postgres.admin-username-input',
+                                          config.default_postgres_username,
+                                          default_username=config.default_postgres_username)
+    postgres_admin_password = _enter_value('setup.postgres.admin-password-input',
+                                          config.default_postgres_password,
+                                          default_password=config.default_postgres_password)
 
     ipfs_container_name = _enter_value('setup.ipfs.container-name-input',
                                        config.default_ipfs_container_name,
@@ -102,10 +102,6 @@ def run_setup_cli():
                                     config.default_ipfs_data_path,
                                     default_path=config.default_ipfs_data_path)
 
-    ipfs_peer_id_addr = _enter_value('setup.ipfs.node-host-input',
-                                     config.default_ipfs_host,
-                                     default_host=config.default_ipfs_host)
-
     nginx_container_name = _enter_value('setup.nginx.container-name-input',
                                         config.default_nginx_container_name,
                                         default_container_name=config.default_nginx_container_name)
@@ -115,11 +111,11 @@ def run_setup_cli():
 
     make_file_from_template(config.docker_compose_template_path,
                             config.result_docker_compose_path,
-                            couchdb_container_name=couchdb_container_name,
-                            couchdb_version=couchdb_version,
-                            couchdb_port=couchdb_port,
-                            couchdb_admin_username=couchdb_admin_username,
-                            couchdb_admin_password=couchdb_admin_password,
+                            postgres_container_name=postgres_container_name,
+                            postgres_version=postgres_version,
+                            postgres_port=postgres_port,
+                            postgres_admin_username=postgres_admin_username,
+                            postgres_admin_password=postgres_admin_password,
                             ipfs_container_name=ipfs_container_name,
                             ipfs_version=ipfs_version,
                             ipfs_rpc_port=ipfs_rpc_port,
@@ -140,17 +136,10 @@ def run_setup_cli():
     make_file_from_template(config.nginx_dockerfile_template_path,
                             config.result_nginx_dockerfile_path)
 
-    make_file_from_template(config.couchdb_initializer_script_path,
-                            config.result_couchdb_initializer_script_path,
-                            couchdb_port=couchdb_port,
-                            couchdb_admin_username=couchdb_admin_username,
-                            couchdb_admin_password=couchdb_admin_password)
-
     os.makedirs(config.ipfs_scripts_folder_path, exist_ok=True)
 
     make_file_from_template(config.ipfs_init_script_path,
-                            config.ipfs_init_result_path,
-                            ipfs_peer_id_addr=ipfs_peer_id_addr)
+                            config.ipfs_init_result_path)
 
 
 if __name__ == '__main__':

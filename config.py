@@ -14,11 +14,11 @@ ____/____\--...\___ \_||_/ ___...|__\-..|____\____/__
 
 translation_file_path = os.path.join(os.path.join('translations', 'lang-files'), 'ru.json')
 
-default_couchdb_container_name = 'MoonStorage-CouchDB'
-default_couchdb_port = 5984
-default_couchdb_username = 'admin'
-default_couchdb_password = 'password'
-default_couchdb_version = 'latest'
+default_postgres_container_name = 'MoonStorage-Postgres'
+default_postgres_port = 5432
+default_postgres_username = 'admin'
+default_postgres_password = 'password'
+default_postgres_version = 'latest'
 
 default_ipfs_container_name = 'MoonStorage-IPFS'
 default_rpc_ipfs_port = 5001
@@ -27,7 +27,7 @@ default_node_ipfs_port = 4001
 default_ipfs_version = 'latest'
 default_ipfs_export_path = './export'
 default_ipfs_data_path = './data'
-default_ipfs_host = '127.0.0.1'
+default_ipfs_host = '192.168.0.2/24'
 
 ipfs_scripts_folder_path = 'ipfs-scripts'
 ipfs_init_script_path = os.path.join(os.path.join('templates', 'ipfs-scripts'), 'ipfs-node-init.sh')

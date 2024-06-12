@@ -2,12 +2,12 @@
   "setup": {
     "start-title": "Приветствуем! Вы приступили к первоначальной настройке Moon Storage. Следуйте инструкциям.",
 
-    "couchdb": {
-      "container-name-input": "Введите название контейнера для CouchDB ({default_container_name}): ",
-      "version-input": "Введите версию для CouchDB ({default_version}): ",
-      "port-input": "Введите внешний порт для CouchDB ({default_port}): ",
-      "admin-username-input": "Введите логин для администратора CouchDB ({default_username}): ",
-      "admin-password-input": "Введите пароль для администратора CouchDB ({default_password}): "
+    "postgres": {
+      "container-name-input": "Введите название контейнера для Postgres ({default_container_name}): ",
+      "version-input": "Введите версию для Postgres ({default_version}): ",
+      "port-input": "Введите внешний порт для Postgres ({default_port}): ",
+      "admin-username-input": "Введите логин для администратора Postgres ({default_username}): ",
+      "admin-password-input": "Введите пароль для администратора Postgres ({default_password}): "
     },
 
     "ipfs": {
@@ -23,7 +23,7 @@
       "data-folder-name-input": "Введите путь для папки ipfs_data ({default_path}): ",
       "node-port-input": "Введите порт для узла IPFS ({default_port}): ",
       "node-id-input": "Введите уникальный ID для узла IPFS ({random_id}): ",
-      "node-host-input": "Введите хост для узла IPFS ({default_host}): "
+      "node-host-input": "Введите хост для узла IPFS в формате ip/mask ({default_host}): "
     },
 
     "nginx": {
