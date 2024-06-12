@@ -30,6 +30,9 @@ services:
       - type: bind
         source: {ipfs_scripts_folder_path}
         target: /container-init.d/
+      - type: bind
+        source: ./webui.car
+        target: /webui.car
     environment:
       IPFS_PROFILE: server
       IPFS_SWARM_KEY_FILE: /ipfs/swarm.key

@@ -112,6 +112,11 @@ def run_setup_cli():
                                       check_func=lambda value: value in {'private', 'public'},
                                       default_mode=config.default_ipfs_network_mode)
 
+    ipfs_node_mode = _enter_value('setup.ipfs.node-mode-input',
+                                   config.default_ipfs_node_mode,
+                                   check_func=lambda value: value in {'root', 'child'},
+                                   default_mode=config.default_ipfs_node_mode)
+
     nginx_container_name = _enter_value('setup.nginx.container-name-input',
                                         config.default_nginx_container_name,
                                         default_container_name=config.default_nginx_container_name)
@@ -138,7 +143,6 @@ def run_setup_cli():
                             nginx_webui_port=nginx_webui_port,
                             nginx_container_name=nginx_container_name,
                             ipfs_node_port=ipfs_node_port,
-                            result_couchdb_intiailizer_script_path=config.result_couchdb_initializer_script_path,
                             ipfs_scripts_folder_path=config.ipfs_scripts_folder_path)
 
     make_file_from_template_with_replace(config.nginx_conf_template_path,
@@ -150,9 +154,21 @@ def run_setup_cli():
 
     os.makedirs(config.ipfs_scripts_folder_path, exist_ok=True)
 
-    make_file_from_template(config.ipfs_init_script_path,
-                            config.ipfs_init_result_path)
+    if ipfs_node_mode == 'root':
+        ipfs_init_path = config.ipfs_init_private_root_script_path if ipfs_network_mode == 'private' else config.ipfs_init_public_root_script_path
 
+        make_file_from_template(ipfs_init_path,
+                                config.ipfs_init_result_path)
+    else:
+        ipfs_init_path = config.ipfs_init_private_child_script_path if ipfs_network_mode == 'private' else config.ipfs_init_public_child_script_path
+
+        root_node_addr = _enter_value(translation.get('setup.ipfs.root-ip-addr-input',
+                                                      config.default_ipfs_root_addr,
+                                                      default_ip_addr=config.default_ipfs_root_addr))
+
+        make_file_from_template(ipfs_init_path,
+                                config.ipfs_init_result_path,
+                                root_node_addr=root_node_addr)
 
 if __name__ == '__main__':
     run_setup_cli()
