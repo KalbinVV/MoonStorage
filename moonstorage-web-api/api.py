@@ -54,7 +54,7 @@ def init():
                                                          'Необходимо ввести порт хоста!')
         ipfs_rpc_url = get_value_from_form_or_raise_exception('ipfs_rpc_url',
                                                               'Необходимо ввести адрес к rpc IFPS!')
-        ipfs_api_url = get_value_from_form_or_raise_exception('ipfs_rpc_url',
+        ipfs_api_url = get_value_from_form_or_raise_exception('ipfs_api_url',
                                                               'Необходимо ввести адрес к api IFPS!')
 
         connection_args = ConnectionArgs(username=username,
@@ -134,8 +134,6 @@ def upload_file():
 
     secret_key = security_utils.get_random_aes_key()
 
-    app.logger.info(secret_key)
-
     upload_path = os.path.join(app.config['UPLOAD_FOLDER'], uploaded_filename)
 
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -183,14 +181,11 @@ def get_file(file_cid: str):
             found_file = cursor.fetchone()
 
             if found_file:
-                app.logger.info(found_file)
-
                 filename, secret_key = found_file[0], bytes(found_file[1])
 
-                app.logger.info(secret_key)
+                file_url = f'{connection_args.ipfs_api_url}/ipfs/{file_cid}'
 
-                response = requests.get(f'{connection_args.ipfs_api_url}'
-                                        f'/ipfs/{file_cid}')
+                response = requests.get(file_url)
 
                 os.makedirs('temp/', exist_ok=True)
 

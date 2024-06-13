@@ -1,6 +1,5 @@
 from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
-from Crypto.Util.Padding import pad, unpad
 
 
 def get_random_aes_key(key_length: int = 32) -> bytes:
@@ -14,7 +13,7 @@ def encrypt_file(source_file_path: str,
     # Генерируем случайный вектор инициализации (IV)
     iv = get_random_bytes(AES.block_size)
 
-    cipher = AES.new(aes_key, AES.MODE_CBC, iv)
+    cipher = AES.new(aes_key, AES.MODE_CFB, iv)
 
     with open(source_file_path, 'rb') as source_file:
         with open(dst_file_path, 'wb') as encrypted_file:
@@ -26,9 +25,7 @@ def encrypt_file(source_file_path: str,
                 if not chunk:
                     break
 
-                padded_chunk = pad(chunk, AES.block_size)
-
-                encrypted_chunk = cipher.encrypt(padded_chunk)
+                encrypted_chunk = cipher.encrypt(chunk)
 
                 encrypted_file.write(encrypted_chunk)
 
@@ -41,7 +38,7 @@ def decrypt_file(source_file_path: str,
         with open(dst_file_path, 'wb') as decrypted_file:
             iv = encrypted_file.read(AES.block_size)
 
-            cipher = AES.new(aes_key, AES.MODE_CBC, iv)
+            cipher = AES.new(aes_key, AES.MODE_CFB, iv)
 
             while True:
                 chunk = encrypted_file.read(blocks_sizes)
@@ -51,8 +48,6 @@ def decrypt_file(source_file_path: str,
 
                 decrypted_chunk = cipher.decrypt(chunk)
 
-                unpadded_chunk = unpad(decrypted_chunk, AES.block_size)
-
-                decrypted_file.write(unpadded_chunk)
+                decrypted_file.write(decrypted_chunk)
 
 
