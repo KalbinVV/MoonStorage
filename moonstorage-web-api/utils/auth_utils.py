@@ -8,7 +8,9 @@ from helper_classes import ConnectionArgs
 
 
 def make_token(connection_args: ConnectionArgs) -> str:
-    encoded_jwt = jwt.encode(connection_args.to_json(), "secret", algorithm="HS256")
+    encoded_jwt = jwt.encode({'connection_args': connection_args.to_json()},
+                             "secret",
+                             algorithm="HS256")
 
     return encoded_jwt
 
@@ -26,6 +28,6 @@ def get_connection_args() -> ConnectionArgs:
     try:
         decoded_jwt = jwt.decode(token, "secret", algorithms=["HS256"])
 
-        return ConnectionArgs.from_json(decoded_jwt)
+        return ConnectionArgs.from_json(decoded_jwt['connection_args'])
     except jwt.ExpiredSignatureError:
         return None

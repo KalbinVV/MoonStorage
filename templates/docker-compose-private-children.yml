@@ -29,6 +29,15 @@ services:
       IPFS_PROFILE: server
       IPFS_SWARM_KEY_FILE: /ipfs/swarm.key
 
+  api:
+    container_name: api
+    build:
+      context: moonstorage-web-api
+      dockerfile: ./Dockerfile
+    ports:
+      - 5000:5000
+
+
 volumes:
   {ipfs_container_name}-export-volume:
   {ipfs_container_name}-data-volume:

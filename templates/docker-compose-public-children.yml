@@ -18,6 +18,13 @@ services:
         target: /data/ipfs
     environment:
       IPFS_PROFILE: server
+  api:
+    container_name: api
+    build:
+      context: moonstorage-web-api
+      dockerfile: ./Dockerfile
+    ports:
+      - 5000:5000
 
 volumes:
   {ipfs_container_name}-export-volume:

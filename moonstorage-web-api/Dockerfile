@@ -6,5 +6,7 @@ WORKDIR $HOME/app/
 
 RUN pip install Flask
 RUN pip install psycopg2-binary
+RUN pip install pyjwt
+RUN pip install requests
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "5000"] # Запуск FastAPI
+ENTRYPOINT ["python", "api.py"] # Запуск Flask

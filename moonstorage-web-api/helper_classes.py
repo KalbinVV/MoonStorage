@@ -1,5 +1,5 @@
 import json
-from typing import NamedTuple
+from typing import NamedTuple, Any
 
 
 class ConnectionArgs(NamedTuple):
@@ -17,8 +17,7 @@ class ConnectionArgs(NamedTuple):
                 'ipfs_url': self.ipfs_url}
 
     @staticmethod
-    def from_json(json_content: str):
-        json_dict = json.loads(json_content)
+    def from_json(json_dict: dict[str, Any]):
 
         return ConnectionArgs(username=json_dict['username'],
                               password=json_dict['password'],

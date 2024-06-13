@@ -2,7 +2,7 @@ import datetime
 import json
 import os
 from functools import wraps
-from typing import NamedTuple, Callable, NoReturn
+from typing import Callable, NoReturn
 
 import psycopg2
 from flask import Flask, request, abort, make_response
@@ -34,15 +34,9 @@ def wrap_to_valid_responses(func: Callable) -> Callable:
         try:
             response = func(*args, **kwargs)
 
-            return json.dumps({'status': 'ok',
-                               'result': response},
-                              indent=4,
-                              ensure_ascii=False).encode('utf-8')
+            return response
         except (Exception,) as e:
-            return json.dumps({'status': 'error',
-                               'message': str(e)},
-                              indent=4,
-                              ensure_ascii=False).encode('utf-8')
+            return abort(400, str(e))
 
     return wrapper
 
@@ -178,3 +172,16 @@ def get_file():
                 pass
             else:
                 abort(404)
+
+
+@app.route('/health', methods=['GET'])
+def check_health():
+    return 'alive'
+
+
+def main():
+    app.run(host='0.0.0.0')
+
+
+if __name__ == '__main__':
+    main()

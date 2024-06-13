@@ -1,75 +1,63 @@
 import argparse
-import os
 
-import psycopg2
-from psycopg2.extensions import AsIs
+import requests
 
 
-def on_create_role(username: str, password: str, host: str, port: str, value: str) -> None:
-    role_name = '_'.join(value.split())
+def show_roles_list(api_url, session: requests.Session) -> None:
+    response = session.get(f'{api_url}/roles')
 
-    with psycopg2.connect(dbname="ipfs", user=username, password=password, host=host, port=port) as connection:
-        with connection.cursor() as cursor:
-            try:
-                cursor.execute(open(os.path.join('sqls', 'create_role.sql'), 'r').read()
-                               .format(role_name=role_name))
-
-                print(f'Роль успешно создана: {role_name}')
-            except (Exception, ) as e:
-                print(f'Не удалось создать роль: {str(e)}')
-
-
-def on_create_user(username: str, password: str, host: str, port: str, value: str) -> None:
-    new_username, new_password = value.split(':')
-
-    with psycopg2.connect(dbname="ipfs", user=username, password=password, host=host, port=port) as connection:
-        with connection.cursor() as cursor:
-            try:
-                cursor.execute(open(os.path.join('sqls', 'create_user.sql'), 'r').read()
-                               .format(username=new_username,
-                                       password=new_password))
-
-                print(f'Пользователь успешно создан: {new_username}')
-            except (Exception, ) as e:
-                print(f'Не удалось создать пользователя: {str(e)}')
-
-
-def on_grant_access(username: str, password: str, host: str, port: str, value: str) -> None:
-    username_to_grant, role_name = value.split(':')
-
-    with psycopg2.connect(dbname="ipfs", user=username, password=password, host=host, port=port) as connection:
-        with connection.cursor() as cursor:
-            try:
-                cursor.execute(open(os.path.join('sqls', 'grant_access.sql'), 'r').read()
-                               .format(role_name=role_name, username=username_to_grant))
-
-                print(f'Пользователю "{username_to_grant}" успешно присвоена роль: {role_name}')
-            except (Exception,) as e:
-                print(f'Не удалось присвоить роль: {str(e)}')
+    print(response.content.decode('utf-8'))
 
 
 commands_dict = {
-    'create_role': on_create_role,
-    'create_user': on_create_user,
-    'grant_access': on_grant_access
+    '/r': show_roles_list
 }
 
 
-def start_cli() -> None:
-    parser = argparse.ArgumentParser(description='CLI для MoonStorage.')
+def start_cli(api_url: str, session: requests.Session):
+    username = input('Имя пользователя: ')
+    password = input('Пароль пользователя: ')
+    db_host = input('Адрес базы данных: ')
+    db_port = input('Порт базы данных: ')
+    ipfs_url = input('Адрес IPFS: ')
 
-    parser.add_argument('-user', dest='username')
-    parser.add_argument('-password', dest='password')
-    parser.add_argument('-host', dest='host', default='localhost')
-    parser.add_argument('-port', dest='port', default=5432)
+    try:
+        response = session.put(f'{api_url}/init', data={'username': username,
+                                                        'password': password,
+                                                        'db_host': db_host,
+                                                        'db_port': db_port,
+                                                        'ipfs_url': ipfs_url})
+        print(response.content)
+    except (Exception,) as e:
+        print(f'Не удалось подключиться: {str(e)}')
 
-    parser.add_argument('--action', dest='action')
-    parser.add_argument('value')
+    while True:
+        user_input = input('>')
+
+        if user_input == '/q':
+            break
+
+        if user_input not in commands_dict:
+            print('Неизвестная команда!')
+        else:
+            commands_dict[user_input](api_url, session)
+
+
+def connect_to_api() -> None:
+    parser = argparse.ArgumentParser(description='Admin CLI для MoonStorage.')
+
+    parser.add_argument('--host', dest='host')
 
     args = parser.parse_args()
 
-    commands_dict[args.action](args.username, args.password, args.host, args.port, args.value)
+    session = requests.Session()
+
+    try:
+        session.get(f'{args.host}/health', timeout=5)
+        start_cli(args.host, session)
+    except (Exception,) as e:
+        print(f'Не удалось подключиться: {e}')
 
 
 if __name__ == '__main__':
-    start_cli()
+    connect_to_api()
