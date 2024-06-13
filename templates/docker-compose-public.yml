@@ -1,7 +1,7 @@
 version: '3.2'
 
 services:
-  posgres:
+  postgres:
     container_name: {postgres_container_name}
     image: postgres:{postgres_version}
     ports:
@@ -9,6 +9,11 @@ services:
     environment:
       POSTGRES_USER: {postgres_admin_username}
       POSTGRES_PASSWORD: {postgres_admin_password}
+      POSTGRES_DB: ipfs
+    volumes:
+      - type: bind
+        source: ./postgres-scripts
+        target: /docker-entrypoint-initdb.d/
   ipfs:
     container_name: {ipfs_container_name}
     image: ipfs/kubo:{ipfs_version}

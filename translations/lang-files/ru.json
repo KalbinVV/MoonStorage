@@ -24,7 +24,9 @@
       "node-port-input": "Введите порт для узла IPFS ({default_port}): ",
       "node-id-input": "Введите уникальный ID для узла IPFS ({random_id}): ",
       "node-host-input": "Введите хост для узла IPFS в формате ip/mask ({default_host}): ",
-      "network-mode-input": "Введите режим работы узла IPFS - private, public ({default_mode}): "
+      "network-mode-input": "Введите режим работы сети IPFS - private, public ({default_mode}): ",
+      "node-mode-input": "Введите режим работы узла IPFS - root, child ({default_mode}): ",
+      "root-ip-addr-input": "Введите адрес корневого узла IPFS ({default_ip_addr}): "
     },
 
     "nginx": {
