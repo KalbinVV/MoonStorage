@@ -1,5 +1,6 @@
 import ipaddress
 import os
+import shutil
 
 import config
 from translations.translation import TranslationFile
@@ -13,7 +14,11 @@ def make_file_from_template(template_path: str,
     with open(template_path, 'r') as f:
         content = f.read().format(**fields)
 
-    with open(result_file_path, 'w') as f:
+    final_result_path = os.path.join(config.default_setup_build_path, result_file_path)
+
+    os.makedirs(os.path.dirname(final_result_path), exist_ok=True)
+
+    with open(os.path.join(final_result_path), 'w') as f:
         f.write(content)
 
 
@@ -26,7 +31,11 @@ def make_file_from_template_with_replace(template_path: str,
     for key, value in replacements.items():
         content = content.replace(key, str(value))
 
-    with open(result_file_path, 'w') as f:
+    final_result_path = os.path.join(config.default_setup_build_path, result_file_path)
+
+    os.makedirs(os.path.dirname(final_result_path), exist_ok=True)
+
+    with open(final_result_path, 'w') as f:
         f.write(content)
 
 
@@ -117,13 +126,6 @@ def run_setup_cli():
                                   check_func=lambda value: value in {'root', 'child'},
                                   default_mode=config.default_ipfs_node_mode)
 
-    nginx_container_name = _enter_value('setup.nginx.container-name-input',
-                                        config.default_nginx_container_name,
-                                        default_container_name=config.default_nginx_container_name)
-    nginx_webui_port = _enter_value('setup.nginx.webui-port',
-                                    config.default_nginx_webui_port,
-                                    default_port=config.default_nginx_webui_port)
-
     if ipfs_node_mode == 'root':
         docker_compose_path = config.docker_compose_template_private_root_path \
             if ipfs_network_mode == 'private' else config.docker_compose_template_public_root_path
@@ -145,35 +147,39 @@ def run_setup_cli():
                             ipfs_export_folder=ipfs_export_folder,
                             ipfs_data_folder=ipfs_data_folder,
                             result_nginx_dockerfile_path=config.result_nginx_dockerfile_path,
-                            nginx_webui_port=nginx_webui_port,
-                            nginx_container_name=nginx_container_name,
                             ipfs_node_port=ipfs_node_port,
                             ipfs_scripts_folder_path=config.ipfs_scripts_folder_path)
-
-    make_file_from_template_with_replace(config.nginx_conf_template_path,
-                                         config.result_nginx_conf_path,
-                                         WEBUI_PORT=ipfs_webui_port)
-
-    make_file_from_template(config.nginx_dockerfile_template_path,
-                            config.result_nginx_dockerfile_path)
 
     os.makedirs(config.ipfs_scripts_folder_path, exist_ok=True)
 
     if ipfs_node_mode == 'root':
-        ipfs_init_path = config.ipfs_init_private_root_script_path if ipfs_network_mode == 'private' else config.ipfs_init_public_root_script_path
+        ipfs_init_path = config.ipfs_init_private_root_script_path if ipfs_network_mode == 'private' \
+            else config.ipfs_init_public_root_script_path
 
         make_file_from_template(ipfs_init_path,
                                 config.ipfs_init_result_path)
     else:
-        ipfs_init_path = config.ipfs_init_private_child_script_path if ipfs_network_mode == 'private' else config.ipfs_init_public_child_script_path
+        ipfs_init_path = config.ipfs_init_private_child_script_path if ipfs_network_mode == 'private' \
+            else config.ipfs_init_public_child_script_path
 
-        root_node_addr = _enter_value(translation.get('setup.ipfs.root-ip-addr-input'),
+        root_node_addr = _enter_value('setup.ipfs.root-ip-addr-input',
                                       config.default_ipfs_root_addr,
-                                      default_ip_addr=config.default_ipfs_root_addr)
+                                      default_addr=config.default_ipfs_root_addr)
 
         make_file_from_template(ipfs_init_path,
                                 config.ipfs_init_result_path,
                                 root_node_addr=root_node_addr)
+
+    shutil.copytree(src='./',
+                    dst=config.default_setup_build_path,
+                    dirs_exist_ok=True,
+                    ignore=shutil.ignore_patterns('build',
+                                                  'templates',
+                                                  '.git',
+                                                  '__pycache__',
+                                                  'venv',
+                                                  '.idea',
+                                                  'generate-key.sh'))
 
 
 if __name__ == '__main__':

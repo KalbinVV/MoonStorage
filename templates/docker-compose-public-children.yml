@@ -11,14 +11,14 @@ services:
       - {ipfs_node_port}:4001/udp
     volumes:
       - type: volume
-        source: ipfs-export-volume
+        source: {ipfs_container_name}-export-volume
         target: /export
       - type: volume
-        source: ipfs-data-volume
+        source: {ipfs_container_name}-data-volume
         target: /data/ipfs
     environment:
       IPFS_PROFILE: server
 
 volumes:
-  ipfs-export-volume:
-  ipfs-data-volume:
+  {ipfs_container_name}-export-volume:
+  {ipfs_container_name}-data-volume:

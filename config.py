@@ -33,11 +33,15 @@ default_ipfs_root_addr = '/ip4/ip_addr/tcp/tcp_ipfs_port/ipfs_node_id'
 
 ipfs_scripts_folder_path = 'ipfs-scripts'
 
-ipfs_init_private_child_script_path = os.path.join(os.path.join('templates', 'ipfs-scripts'), 'ipfs-node-init-private-child.sh')
-ipfs_init_public_child_script_path = os.path.join(os.path.join('templates', 'ipfs-scripts'), 'ipfs-node-init-public-child.sh')
+ipfs_init_private_child_script_path = os.path.join(os.path.join('templates', 'ipfs-scripts'),
+                                                   'ipfs-node-init-private-child.sh')
+ipfs_init_public_child_script_path = os.path.join(os.path.join('templates', 'ipfs-scripts'),
+                                                  'ipfs-node-init-public-child.sh')
 
-ipfs_init_private_root_script_path = os.path.join(os.path.join('templates', 'ipfs-scripts'), 'ipfs-node-init-private-root.sh')
-ipfs_init_public_root_script_path = os.path.join(os.path.join('templates', 'ipfs-scripts'), 'ipfs-node-init-public-root.sh')
+ipfs_init_private_root_script_path = os.path.join(os.path.join('templates', 'ipfs-scripts'),
+                                                  'ipfs-node-init-private-root.sh')
+ipfs_init_public_root_script_path = os.path.join(os.path.join('templates', 'ipfs-scripts'),
+                                                 'ipfs-node-init-public-root.sh')
 
 ipfs_init_result_path = os.path.join(os.path.join('ipfs-scripts', 'ipfs-node-init.sh'))
 
@@ -60,3 +64,5 @@ result_nginx_dockerfile_path = 'nginx-dockerfile'
 
 couchdb_initializer_script_path = os.path.join('templates', 'couchdb-initializer.sh')
 result_couchdb_initializer_script_path = 'couchdb-initializer.sh'
+
+default_setup_build_path = 'build/'

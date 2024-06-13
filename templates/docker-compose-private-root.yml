@@ -24,10 +24,10 @@ services:
       - {ipfs_node_port}:4001/udp
     volumes:
       - type: volume
-        source: ipfs-export-volume
+        source: {ipfs_container_name}-export-volume
         target: /export
       - type: volume
-        source: ipfs-data-volume
+        source: {ipfs_container_name}-data-volume
         target: /data/ipfs
       - type: bind
         source: ./swarm.key
@@ -43,5 +43,5 @@ services:
       IPFS_SWARM_KEY_FILE: /ipfs/swarm.key
 
 volumes:
-  ipfs-export-volume:
-  ipfs-data-volume:
+  {ipfs_container_name}-export-volume:
+  {ipfs_container_name}-data-volume:
