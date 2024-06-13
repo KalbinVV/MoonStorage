@@ -1,0 +1,34 @@
+version: '3.2'
+
+services:
+  ipfs:
+    container_name: {ipfs_container_name}
+    image: ipfs/kubo:{ipfs_version}
+    ports:
+      - {ipfs_rpc_port}:5001
+      - {ipfs_webui_port}:8080
+      - {ipfs_node_port}:4001
+      - {ipfs_node_port}:4001/udp
+    volumes:
+      - type: volume
+        source: ipfs-export-volume
+        target: /export
+      - type: volume
+        source: ipfs-data-volume
+        target: /data/ipfs
+      - type: bind
+        source: ./swarm.key
+        target: /ipfs/swarm.key
+      - type: bind
+        source: {ipfs_scripts_folder_path}
+        target: /container-init.d/
+      - type: bind
+        source: ./webui.car
+        target: /webui.car
+    environment:
+      IPFS_PROFILE: server
+      IPFS_SWARM_KEY_FILE: /ipfs/swarm.key
+
+volumes:
+  ipfs-export-volume:
+  ipfs-data-volume:

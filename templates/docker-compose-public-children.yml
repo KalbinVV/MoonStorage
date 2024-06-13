@@ -1,0 +1,24 @@
+version: '3.2'
+
+services:
+  ipfs:
+    container_name: {ipfs_container_name}
+    image: ipfs/kubo:{ipfs_version}
+    ports:
+      - {ipfs_rpc_port}:5001
+      - {ipfs_webui_port}:8080
+      - {ipfs_node_port}:4001
+      - {ipfs_node_port}:4001/udp
+    volumes:
+      - type: volume
+        source: ipfs-export-volume
+        target: /export
+      - type: volume
+        source: ipfs-data-volume
+        target: /data/ipfs
+    environment:
+      IPFS_PROFILE: server
+
+volumes:
+  ipfs-export-volume:
+  ipfs-data-volume:
