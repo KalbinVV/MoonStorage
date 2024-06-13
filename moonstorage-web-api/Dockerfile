@@ -8,5 +8,7 @@ RUN pip install Flask
 RUN pip install psycopg2-binary
 RUN pip install pyjwt
 RUN pip install requests
+RUN pip install pycryptodome
+
 
 ENTRYPOINT ["python", "api.py"] # Запуск Flask

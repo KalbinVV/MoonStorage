@@ -5,7 +5,7 @@ create table if not exists roles (
 create table if not exists registry_data (
 	cid varchar primary key,
 	filename varchar not null,
-	private_key varchar(256) not null,
+	private_key bytea not null,
 	owned_by varchar not null,
 	role varchar not null,
 	foreign key(role) references roles(name) on delete restrict

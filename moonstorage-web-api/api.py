@@ -5,12 +5,12 @@ from functools import wraps
 from typing import Callable, NoReturn
 
 import psycopg2
-from flask import Flask, request, abort, make_response
+from flask import Flask, request, abort, make_response, send_file, after_this_request
 import requests
 
 from helper_classes import ConnectionArgs
 
-from utils import auth_utils
+from utils import auth_utils, security_utils
 
 from decorators import auth_decorators
 
@@ -52,14 +52,17 @@ def init():
                                                          'Необходимо ввести адрес хоста!')
         db_port = get_value_from_form_or_raise_exception('db_port',
                                                          'Необходимо ввести порт хоста!')
-        ipfs_url = get_value_from_form_or_raise_exception('ipfs_url',
-                                                          'Необходимо ввести адрес к rpc IFPS!')
+        ipfs_rpc_url = get_value_from_form_or_raise_exception('ipfs_rpc_url',
+                                                              'Необходимо ввести адрес к rpc IFPS!')
+        ipfs_api_url = get_value_from_form_or_raise_exception('ipfs_rpc_url',
+                                                              'Необходимо ввести адрес к api IFPS!')
 
         connection_args = ConnectionArgs(username=username,
                                          password=password,
                                          db_host=db_host,
                                          db_port=db_port,
-                                         ipfs_url=ipfs_url)
+                                         ipfs_rpc_url=ipfs_rpc_url,
+                                         ipfs_api_url=ipfs_api_url)
 
         response = make_response(json.dumps({'status': 'ok'}).encode('utf-8'), 200)
 
@@ -125,15 +128,29 @@ def upload_file():
 
     uploaded_filename = f'{file.filename}-{str(datetime.datetime.now())}'
 
+    temp_path = os.path.join('temp', uploaded_filename)
+    os.makedirs('temp/', exist_ok=True)
+    file.save(temp_path)
+
+    secret_key = security_utils.get_random_aes_key()
+
+    app.logger.info(secret_key)
+
     upload_path = os.path.join(app.config['UPLOAD_FOLDER'], uploaded_filename)
 
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-    file.save(upload_path)
+
+    security_utils.encrypt_file(temp_path,
+                                upload_path,
+                                secret_key)
+
+    os.remove(temp_path)
 
     with open(upload_path, 'rb') as f:
-        response = requests.post(f'{connection_args.ipfs_url}/api/v0/add', files={'file': f}).json()
+        response = requests.post(f'{connection_args.ipfs_rpc_url}/api/v0/add', files={'file': f}).json()
 
         uploaded_file_cid = response['Hash']
+        uploaded_file_size = response['Size']
 
         with psycopg2.connect(dbname='ipfs',
                               user=connection_args.username,
@@ -143,19 +160,16 @@ def upload_file():
             with connection.cursor() as cursor:
                 cursor.execute("insert into registry_data(cid, filename, private_key, role) "
                                "values(%s, %s, %s, %s)",
-                               (uploaded_file_cid, uploaded_filename, 'private_key', required_role))
+                               (uploaded_file_cid, uploaded_filename, psycopg2.Binary(secret_key), required_role))
 
-                return {'cid': uploaded_file_cid}
+                return {'cid': uploaded_file_cid,
+                        'size': uploaded_file_size}
 
 
-@app.route('/', methods=['GET'])
-@wrap_to_valid_responses
+@app.route('/download/<file_cid>', methods=['GET'])
 @auth_decorators.auth_required
-def get_file():
+def get_file(file_cid: str):
     connection_args = auth_utils.get_connection_args()
-
-    file_cid = get_value_from_form_or_raise_exception('cid',
-                                                      'Укажите cid файла!')
 
     with psycopg2.connect(dbname='ipfs',
                           user=connection_args.username,
@@ -163,13 +177,45 @@ def get_file():
                           host=connection_args.db_host,
                           port=connection_args.db_port) as connection:
         with connection.cursor() as cursor:
-            cursor.execute('select cid, private_key from registry '
-                           'where cid=%s', file_cid)
+            cursor.execute('select filename, private_key from registry '
+                           'where cid=%s', (file_cid, ))
 
             found_file = cursor.fetchone()
 
             if found_file:
-                pass
+                app.logger.info(found_file)
+
+                filename, secret_key = found_file[0], bytes(found_file[1])
+
+                app.logger.info(secret_key)
+
+                response = requests.get(f'{connection_args.ipfs_api_url}'
+                                        f'/ipfs/{file_cid}')
+
+                os.makedirs('temp/', exist_ok=True)
+
+                temp_encrypt_path = os.path.join('temp', f'{filename}-encrypted')
+                temp_decrypt_path = os.path.join('temp', filename)
+
+                with open(temp_encrypt_path, 'wb') as encrypted_file:
+                    encrypted_file.write(response.content)
+
+                security_utils.decrypt_file(temp_encrypt_path,
+                                            temp_decrypt_path,
+                                            secret_key)
+
+                os.remove(temp_encrypt_path)
+
+                # TODO: Сделать удаление файлов после расшифрования
+                '''
+                @after_this_request
+                def remove_file(_rsp):
+                    file_handle.close()
+                    os.remove(temp_decrypt_path)
+                '''
+
+                return send_file(temp_decrypt_path, download_name=filename)
+
             else:
                 abort(404)
 
@@ -180,7 +226,7 @@ def check_health():
 
 
 def main():
-    app.run(host='0.0.0.0')
+    app.run(host='0.0.0.0', debug=True)
 
 
 if __name__ == '__main__':

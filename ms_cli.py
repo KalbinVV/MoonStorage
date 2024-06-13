@@ -3,19 +3,19 @@ import argparse
 import requests
 
 
-def show_roles_list(api_url: str, session: requests.Session, user_input: str) -> None:
+def show_roles_list(api_url: str, session: requests.Session, _user_input: str) -> None:
     response = session.get(f'{api_url}/roles', timeout=5)
 
     print(response.content.decode('utf-8'))
 
 
-def show_files_list(api_url: str, session: requests.Session, user_input: str) -> None:
+def show_files_list(api_url: str, session: requests.Session, _user_input: str) -> None:
     response = session.get(f'{api_url}/files', timeout=5)
 
     print(response.content.decode('utf-8'))
 
 
-def check_api_health(api_url: str, session: requests.Session, user_input: str) -> None:
+def check_api_health(api_url: str, session: requests.Session, _user_input: str) -> None:
     response = session.get(f'{api_url}/health', timeout=5)
 
     print(response.content.decode('utf-8'))
@@ -33,11 +33,21 @@ def upload_file(api_url: str, session: requests.Session, user_input: str) -> Non
         print(response.content.decode('utf-8'))
 
 
+def download_file(api_url: str, session: requests.Session, user_input: str):
+    cid, dst_file = user_input.split(' ')[1], ''.join(user_input.split(' ')[2:])
+
+    with open(dst_file, 'wb') as f:
+        response = session.get(f'{api_url}/download/{cid}')
+
+        f.write(response.content)
+
+
 commands_dict = {
     '/roles': show_roles_list,
     '/files': show_files_list,
     '/health': check_api_health,
-    '/upload': upload_file
+    '/upload': upload_file,
+    '/download': download_file
 }
 
 
@@ -46,14 +56,16 @@ def start_cli(api_url: str, session: requests.Session):
     password = input('Пароль пользователя: ')
     db_host = input('Адрес базы данных: ')
     db_port = input('Порт базы данных: ')
-    ipfs_url = input('Адрес IPFS: ')
+    ipfs_rpc_url = input('Адрес IPFS (RPC): ')
+    ipfs_api_url = input('Адрес IPFS (API): ')
 
     try:
         response = session.put(f'{api_url}/init', data={'username': username,
                                                         'password': password,
                                                         'db_host': db_host,
                                                         'db_port': db_port,
-                                                        'ipfs_url': ipfs_url})
+                                                        'ipfs_rpc_url': ipfs_rpc_url,
+                                                        'ipfs_api_url': ipfs_api_url})
         print(response.content)
     except (Exception,) as e:
         print(f'Не удалось подключиться: {str(e)}')
