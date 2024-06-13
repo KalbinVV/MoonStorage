@@ -44,8 +44,12 @@ ipfs_init_result_path = os.path.join(os.path.join('ipfs-scripts', 'ipfs-node-ini
 default_nginx_container_name = 'MoonStorage-Nginx'
 default_nginx_webui_port = 80
 
-docker_compose_template_private_path = os.path.join('templates', 'docker-compose-private.yml')
-docker_compose_template_public_path = os.path.join('templates', 'docker-compose-public.yml')
+docker_compose_template_private_root_path = os.path.join('templates', 'docker-compose-private-root.yml')
+docker_compose_template_public_root_path = os.path.join('templates', 'docker-compose-public-root.yml')
+
+docker_compose_template_private_children_path = os.path.join('templates', 'docker-compose-private-children.yml')
+docker_compose_template_public_children_path = os.path.join('templates', 'docker-compose-public-children.yml')
+
 result_docker_compose_path = 'docker-compose.yml'
 
 nginx_conf_template_path = os.path.join('templates', 'nginx.conf')

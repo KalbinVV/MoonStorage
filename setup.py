@@ -71,20 +71,20 @@ def run_setup_cli():
         return value
 
     postgres_container_name = _enter_value('setup.postgres.container-name-input',
-                                          config.default_postgres_container_name,
-                                          default_container_name=config.default_postgres_container_name)
+                                           config.default_postgres_container_name,
+                                           default_container_name=config.default_postgres_container_name)
     postgres_version = _enter_value('setup.postgres.version-input',
-                                   config.default_postgres_version,
-                                   default_version=config.default_postgres_version)
+                                    config.default_postgres_version,
+                                    default_version=config.default_postgres_version)
     postgres_port = _enter_value('setup.postgres.port-input',
-                                config.default_postgres_port,
-                                default_port=config.default_postgres_port)
+                                 config.default_postgres_port,
+                                 default_port=config.default_postgres_port)
     postgres_admin_username = _enter_value('setup.postgres.admin-username-input',
-                                          config.default_postgres_username,
-                                          default_username=config.default_postgres_username)
+                                           config.default_postgres_username,
+                                           default_username=config.default_postgres_username)
     postgres_admin_password = _enter_value('setup.postgres.admin-password-input',
-                                          config.default_postgres_password,
-                                          default_password=config.default_postgres_password)
+                                           config.default_postgres_password,
+                                           default_password=config.default_postgres_password)
 
     ipfs_container_name = _enter_value('setup.ipfs.container-name-input',
                                        config.default_ipfs_container_name,
@@ -108,14 +108,14 @@ def run_setup_cli():
                                     config.default_ipfs_data_path,
                                     default_path=config.default_ipfs_data_path)
     ipfs_network_mode = _enter_value('setup.ipfs.network-mode-input',
-                                      config.default_ipfs_network_mode,
-                                      check_func=lambda value: value in {'private', 'public'},
-                                      default_mode=config.default_ipfs_network_mode)
+                                     config.default_ipfs_network_mode,
+                                     check_func=lambda value: value in {'private', 'public'},
+                                     default_mode=config.default_ipfs_network_mode)
 
     ipfs_node_mode = _enter_value('setup.ipfs.node-mode-input',
-                                   config.default_ipfs_node_mode,
-                                   check_func=lambda value: value in {'root', 'child'},
-                                   default_mode=config.default_ipfs_node_mode)
+                                  config.default_ipfs_node_mode,
+                                  check_func=lambda value: value in {'root', 'child'},
+                                  default_mode=config.default_ipfs_node_mode)
 
     nginx_container_name = _enter_value('setup.nginx.container-name-input',
                                         config.default_nginx_container_name,
@@ -124,7 +124,12 @@ def run_setup_cli():
                                     config.default_nginx_webui_port,
                                     default_port=config.default_nginx_webui_port)
 
-    docker_compose_path = config.docker_compose_template_private_path if ipfs_network_mode == 'private' else config.docker_compose_template_public_path
+    if ipfs_node_mode == 'root':
+        docker_compose_path = config.docker_compose_template_private_root_path \
+            if ipfs_network_mode == 'private' else config.docker_compose_template_public_root_path
+    else:
+        docker_compose_path = config.docker_compose_template_private_children_path \
+            if ipfs_network_mode == 'private' else config.docker_compose_template_public_children_path
 
     make_file_from_template(docker_compose_path,
                             config.result_docker_compose_path,
@@ -162,13 +167,14 @@ def run_setup_cli():
     else:
         ipfs_init_path = config.ipfs_init_private_child_script_path if ipfs_network_mode == 'private' else config.ipfs_init_public_child_script_path
 
-        root_node_addr = _enter_value(translation.get('setup.ipfs.root-ip-addr-input',
-                                                      config.default_ipfs_root_addr,
-                                                      default_ip_addr=config.default_ipfs_root_addr))
+        root_node_addr = _enter_value(translation.get('setup.ipfs.root-ip-addr-input'),
+                                      config.default_ipfs_root_addr,
+                                      default_ip_addr=config.default_ipfs_root_addr)
 
         make_file_from_template(ipfs_init_path,
                                 config.ipfs_init_result_path,
                                 root_node_addr=root_node_addr)
+
 
 if __name__ == '__main__':
     run_setup_cli()
