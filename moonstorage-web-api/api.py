@@ -34,7 +34,7 @@ def wrap_to_valid_responses(func: Callable) -> Callable:
         try:
             response = func(*args, **kwargs)
 
-            return response
+            return json.dumps(response, indent=4, ensure_ascii=False).encode('utf-8')
         except (Exception,) as e:
             return abort(400, str(e))
 
