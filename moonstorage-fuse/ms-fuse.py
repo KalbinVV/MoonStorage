@@ -1,3 +1,5 @@
+import abc
+import datetime
 import os
 import errno
 import requests
@@ -7,6 +9,8 @@ import logging
 
 import config
 
+from cache import CachedFieldsStorageInMemory
+
 logging.basicConfig(level=logging.INFO)
 
 session = requests.Session()
@@ -15,7 +19,7 @@ session = requests.Session()
 class HTTPApiFilesystem(Operations):
     def __init__(self, base_url):
         self.base_url = base_url
-        self.cache = []
+        self.cache_in_memory = CachedFieldsStorageInMemory()
 
     def _full_path(self, partial):
         if partial.startswith("/"):
@@ -25,6 +29,13 @@ class HTTPApiFilesystem(Operations):
 
     def getattr(self, path, fh=None):
         logging.info(f"getattr called for path: {path}")
+
+        cache_key = f'getattr-{path}'
+
+        if self.cache_in_memory.is_exist(cache_key):
+            logging.info(f'getattr was read from cache: {path}')
+            
+            return self.cache_in_memory.get(cache_key)
 
         response = session.get(f'{self.base_url}/fuse/info', params={'path': path})
 
@@ -47,6 +58,9 @@ class HTTPApiFilesystem(Operations):
             'st_mtime': file_info['mtime'],
             'st_ctime': file_info['ctime'],
         }
+
+        self.cache_in_memory.set(cache_key, st, datetime.timedelta(minutes=5))
+
         return st
 
     def read(self, path, size, offset, fh):
@@ -68,22 +82,27 @@ class HTTPApiFilesystem(Operations):
         return response.content
 
     def readdir(self, path, fh):
+        logging.info(f'Reading dir: {path}...')
+
         url = f'{self.base_url}/fuse/dir/read{path}'
 
-        logging.info(f"readdir called for path: {path}, URL: {url}")
+        cache_key = f'readdir-{path}'
+
+        if self.cache_in_memory.is_exist(cache_key):
+            logging.info(f'Dir {path} was read from cache')
+
+            return self.cache_in_memory.get(cache_key)
 
         response = session.get(url)
-
-        logging.info(f'Response from readdir: {response.content}')
 
         if response.status_code != 200:
             return -errno.EIO
 
-        directory_contents = response.json()
+        directory_contents = ['.', '..'] + response.json()
 
-        logging.debug(f"readdir response: {directory_contents}")
+        self.cache_in_memory.set(cache_key, directory_contents, datetime.timedelta(minutes=5))
 
-        return ['.', '..'] + directory_contents
+        return directory_contents
 
 
 if __name__ == '__main__':
