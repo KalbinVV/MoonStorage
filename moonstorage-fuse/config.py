@@ -1,0 +1,7 @@
+api_url = 'http://localhost:5000'
+username = 'user_1'
+password = 'pass'
+db_host = '172.18.0.5'
+db_port = '5432'
+ipfs_rpc_url = 'http://172.18.0.2:5001'
+ipfs_api_url = 'http://172.18.0.2:8080'
