@@ -1,6 +1,8 @@
 import datetime
 import json
+import logging
 import os
+import stat
 from functools import wraps
 from typing import Callable, NoReturn
 
@@ -17,6 +19,54 @@ from decorators import auth_decorators
 app = Flask(__name__)
 
 app.config['UPLOAD_FOLDER'] = 'upload/'
+
+
+class HelperFuncs:
+    @staticmethod
+    def get_user_roles() -> list:
+        connection_args = auth_utils.get_connection_args()
+
+        with psycopg2.connect(dbname="ipfs",
+                              user=connection_args.username,
+                              password=connection_args.password,
+                              host=connection_args.db_host,
+                              port=connection_args.db_port) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute('select role from public.user_roles;')
+
+                return [role[0] for role in cursor.fetchall()]
+
+    @staticmethod
+    def get_files_in_role(role_name: str) -> list:
+        connection_args = auth_utils.get_connection_args()
+
+        with psycopg2.connect(dbname="ipfs",
+                              user=connection_args.username,
+                              password=connection_args.password,
+                              host=connection_args.db_host,
+                              port=connection_args.db_port) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute('select filename from registry '
+                               'where role=%s', (role_name,))
+
+                return [file[0] for file in cursor.fetchall()]
+
+    @staticmethod
+    def get_file_info_by_name(role: str, filename: str) -> dict:
+        connection_args = auth_utils.get_connection_args()
+
+        with psycopg2.connect(dbname="ipfs",
+                              user=connection_args.username,
+                              password=connection_args.password,
+                              host=connection_args.db_host,
+                              port=connection_args.db_port) as connection:
+            with connection.cursor() as cursor:
+                app.logger.info(f'Role: {role}\nFile name:{filename}')
+
+                cursor.execute('select file_size from registry '
+                               'where role=%s and filename=%s', (role, filename))
+
+                return {'size': cursor.fetchone()[0]}
 
 
 def get_value_from_form_or_raise_exception(key: str, exception_message: str) -> str | NoReturn:
@@ -77,17 +127,7 @@ def init():
 @wrap_to_valid_responses
 @auth_decorators.auth_required
 def get_my_roles():
-    connection_args = auth_utils.get_connection_args()
-
-    with psycopg2.connect(dbname="ipfs",
-                          user=connection_args.username,
-                          password=connection_args.password,
-                          host=connection_args.db_host,
-                          port=connection_args.db_port) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute('select role from public.user_roles;')
-
-            return [role[0] for role in cursor.fetchall()]
+    return HelperFuncs.get_user_roles()
 
 
 @app.route('/files', methods=['GET'])
@@ -156,9 +196,10 @@ def upload_file():
                               host=connection_args.db_host,
                               port=connection_args.db_port) as connection:
             with connection.cursor() as cursor:
-                cursor.execute("insert into registry_data(cid, filename, private_key, role) "
-                               "values(%s, %s, %s, %s)",
-                               (uploaded_file_cid, uploaded_filename, psycopg2.Binary(secret_key), required_role))
+                cursor.execute("insert into registry_data(cid, filename, private_key, role, file_size) "
+                               "values(%s, %s, %s, %s, %s)",
+                               (uploaded_file_cid, uploaded_filename, psycopg2.Binary(secret_key), required_role,
+                                uploaded_file_size))
 
                 return {'cid': uploaded_file_cid,
                         'size': uploaded_file_size}
@@ -176,7 +217,7 @@ def get_file(file_cid: str):
                           port=connection_args.db_port) as connection:
         with connection.cursor() as cursor:
             cursor.execute('select filename, private_key from registry '
-                           'where cid=%s', (file_cid, ))
+                           'where cid=%s', (file_cid,))
 
             found_file = cursor.fetchone()
 
@@ -199,7 +240,7 @@ def get_file(file_cid: str):
                                             temp_decrypt_path,
                                             secret_key)
 
-                os.remove(temp_encrypt_path)
+                # os.remove(temp_encrypt_path) - Вернуть после того как придумаю как сделать адекватную передачу данных через fuse
 
                 # TODO: Сделать удаление файлов после расшифрования
                 '''
@@ -213,6 +254,132 @@ def get_file(file_cid: str):
 
             else:
                 abort(404)
+
+
+@app.route('/download_by_name/', methods=['GET'])
+@auth_decorators.auth_required
+def get_file_by_name():
+    filename = request.args.get('filename')
+
+    app.logger.info(f'filename: {filename}')
+
+    path_parts = filename[1:].split('/')
+
+    connection_args = auth_utils.get_connection_args()
+
+    with psycopg2.connect(dbname='ipfs',
+                          user=connection_args.username,
+                          password=connection_args.password,
+                          host=connection_args.db_host,
+                          port=connection_args.db_port) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute('select filename, private_key, cid from registry '
+                           'where role=%s and filename=%s', (path_parts[0], path_parts[1]))
+
+            app.logger.info(f'Path parts: {path_parts}')
+
+            found_file = cursor.fetchone()
+
+            if found_file:
+                filename, secret_key, file_cid = found_file[0], bytes(found_file[1]), found_file[2]
+
+                file_url = f'{connection_args.ipfs_api_url}/ipfs/{file_cid}'
+
+                response = requests.get(file_url)
+
+                os.makedirs('temp/', exist_ok=True)
+
+                temp_encrypt_path = os.path.join('temp', f'{filename}-encrypted')
+                temp_decrypt_path = os.path.join('temp', filename)
+
+                with open(temp_encrypt_path, 'wb') as encrypted_file:
+                    encrypted_file.write(response.content)
+
+                security_utils.decrypt_file(temp_encrypt_path,
+                                            temp_decrypt_path,
+                                            secret_key)
+
+                # os.remove(temp_encrypt_path)
+
+                # TODO: Сделать удаление файлов после расшифрования
+                '''
+                @after_this_request
+                def remove_file(_rsp):
+                    file_handle.close()
+                    os.remove(temp_decrypt_path)
+                '''
+
+                return send_file(temp_decrypt_path, download_name=filename)
+
+            else:
+                abort(404)
+
+
+@app.route('/files_in_role/{role_name}')
+@auth_decorators.auth_required
+def get_files_in_role(role_name: str):
+    HelperFuncs.get_files_in_role(role_name)
+
+
+@app.route('/fuse/info/')
+@auth_decorators.auth_required
+def fuse_get_file():
+    file_path = request.args.get('path')
+
+    path_parts = file_path[1:].split('/')
+
+    if len(path_parts) == 1:
+        return {
+            'mode': stat.S_IFDIR,
+            'nlink': 0,
+            'size': 1,
+            "atime": 1625247600,
+            "mtime": 1625247600,
+            "ctime": 1625247600,
+            "ino": 12345,
+            "dev": 2049,
+            "uid": 1000,
+            "gid": 1000,
+        }
+    else:
+        role = path_parts[0]
+        filename = path_parts[1]
+
+        app.logger.info(f'Path parts: {path_parts}')
+
+        file_info = HelperFuncs.get_file_info_by_name(role, filename)
+
+        return {
+            'mode': stat.S_IFREG,
+            'nlink': 0,
+            'size': file_info['size'],
+            "atime": 1625247600,
+            "mtime": 1625247600,
+            "ctime": 1625247600,
+            "ino": 12345,
+            "dev": 2049,
+            "uid": 1000,
+            "gid": 1000,
+        }
+
+
+@app.route('/fuse/dir/read/', defaults={'dir_name': None})
+@app.route('/fuse/dir/read/<dir_name>')
+@auth_decorators.auth_required
+def fuse_read_dir(dir_name: str):
+    if dir_name is None:
+        return HelperFuncs.get_user_roles()
+    else:
+        return HelperFuncs.get_files_in_role(dir_name)
+
+
+@app.route('/fuse/file/read')
+def fuse_read_file():
+    filename = request.args.get('filename')
+
+    app.logger.info(filename)
+
+    return ''
 
 
 @app.route('/health', methods=['GET'])

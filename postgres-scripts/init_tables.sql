@@ -8,6 +8,7 @@ create table if not exists registry_data (
 	private_key bytea not null,
 	owned_by varchar not null,
 	role varchar not null,
+	file_size integer not null,
 	foreign key(role) references roles(name) on delete restrict
 );
 
@@ -29,7 +30,8 @@ AS SELECT cid,
     filename,
     private_key,
     owned_by,
-    role
+    role,
+    file_size
    FROM registry_data rg
   WHERE (role::text IN (select role from user_roles));
 
