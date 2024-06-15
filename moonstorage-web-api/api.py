@@ -2,6 +2,7 @@ import datetime
 import json
 import logging
 import os
+import shutil
 import stat
 from functools import wraps
 from typing import Callable, NoReturn
@@ -15,6 +16,7 @@ from helper_classes import ConnectionArgs
 from utils import auth_utils, security_utils
 
 from decorators import auth_decorators
+
 
 app = Flask(__name__)
 
@@ -66,7 +68,12 @@ class HelperFuncs:
                 cursor.execute('select file_size from registry '
                                'where role=%s and filename=%s', (role, filename))
 
-                return {'size': cursor.fetchone()[0]}
+                found_file = cursor.fetchone()
+
+                if not found_file:
+                    raise FileNotFoundError()
+
+                return {'size': found_file[0]}
 
 
 def get_value_from_form_or_raise_exception(key: str, exception_message: str) -> str | NoReturn:
@@ -240,7 +247,8 @@ def get_file(file_cid: str):
                                             temp_decrypt_path,
                                             secret_key)
 
-                # os.remove(temp_encrypt_path) - Вернуть после того как придумаю как сделать адекватную передачу данных через fuse
+                # os.remove(temp_encrypt_path)
+                # Вернуть после того как придумаю как сделать адекватную передачу данных через fuse
 
                 # TODO: Сделать удаление файлов после расшифрования
                 '''
@@ -299,15 +307,13 @@ def get_file_by_name():
                                             temp_decrypt_path,
                                             secret_key)
 
-                # os.remove(temp_encrypt_path)
-
-                # TODO: Сделать удаление файлов после расшифрования
-                '''
                 @after_this_request
-                def remove_file(_rsp):
-                    file_handle.close()
-                    os.remove(temp_decrypt_path)
-                '''
+                def remove_file(rsp):
+                    try:
+                        os.remove(temp_decrypt_path)
+                    except Exception as error:
+                        app.logger.error("Error removing file: %s", error)
+                    return rsp
 
                 return send_file(temp_decrypt_path, download_name=filename)
 
@@ -347,7 +353,10 @@ def fuse_get_file():
 
         app.logger.info(f'Path parts: {path_parts}')
 
-        file_info = HelperFuncs.get_file_info_by_name(role, filename)
+        try:
+            file_info = HelperFuncs.get_file_info_by_name(role, filename)
+        except (FileNotFoundError, ):
+            return '', 404
 
         return {
             'mode': stat.S_IFREG,
@@ -373,13 +382,33 @@ def fuse_read_dir(dir_name: str):
         return HelperFuncs.get_files_in_role(dir_name)
 
 
-@app.route('/fuse/file/read')
-def fuse_read_file():
-    filename = request.args.get('filename')
+@app.route('/fuse/file/exists')
+@auth_decorators.auth_required
+def fuse_check_file_exists():
+    file_path = request.args.get('path')
 
-    app.logger.info(filename)
+    path_parts = file_path[1:].split('/')
 
-    return ''
+    if len(path_parts) == 1:
+        return False
+
+    connection_args = auth_utils.get_connection_args()
+
+    with psycopg2.connect(dbname='ipfs',
+                          user=connection_args.username,
+                          password=connection_args.password,
+                          host=connection_args.db_host,
+                          port=connection_args.db_port) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("select file_size from registry where role=%s and filename=%s",
+                           (path_parts[0], path_parts[1]))
+
+            found_file = cursor.fetchone()
+
+            if not found_file:
+                abort(404)
+            else:
+                return {'exists': True, 'size': found_file[0]}
 
 
 @app.route('/health', methods=['GET'])
@@ -389,6 +418,8 @@ def check_health():
 
 def main():
     app.run(host='0.0.0.0', debug=True)
+
+    shutil.rmtree(app.config['UPLOAD_FOLDER'])
 
 
 if __name__ == '__main__':

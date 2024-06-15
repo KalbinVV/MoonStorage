@@ -9,7 +9,7 @@ import logging
 
 import config
 
-from cache import CachedFieldsStorageInMemory
+from cache import CachedFieldsStorageInMemory, CachedFieldsStorageInFiles
 
 logging.basicConfig(level=logging.INFO)
 
@@ -19,7 +19,9 @@ session = requests.Session()
 class HTTPApiFilesystem(Operations):
     def __init__(self, base_url):
         self.base_url = base_url
-        self.cache_in_memory = CachedFieldsStorageInMemory()
+        self.__cache_in_memory = CachedFieldsStorageInMemory()
+        self.__cache_in_files = CachedFieldsStorageInFiles('cache')
+        self.__required_to_read_files = set()
 
     def _full_path(self, partial):
         if partial.startswith("/"):
@@ -32,10 +34,10 @@ class HTTPApiFilesystem(Operations):
 
         cache_key = f'getattr-{path}'
 
-        if self.cache_in_memory.is_exist(cache_key):
+        if self.__cache_in_memory.is_exist(cache_key):
             logging.info(f'getattr was read from cache: {path}')
-            
-            return self.cache_in_memory.get(cache_key)
+
+            return self.__cache_in_memory.get(cache_key)
 
         response = session.get(f'{self.base_url}/fuse/info', params={'path': path})
 
@@ -59,27 +61,122 @@ class HTTPApiFilesystem(Operations):
             'st_ctime': file_info['ctime'],
         }
 
-        self.cache_in_memory.set(cache_key, st, datetime.timedelta(minutes=5))
+        self.__cache_in_memory.set(cache_key, st, datetime.timedelta(days=1))
 
         return st
 
-    def read(self, path, size, offset, fh):
+    def __old_read(self, path, size, offset, fh):
         path_parts = path[1:].split('/')
 
         if len(path_parts) == 1:
             return -errno.EISDIR
 
-        headers = {'Range': f'bytes={offset}-{offset + size - 1}'}
+        logging.info(f'Reading file {path}...')
+
+        cache_key = f'read-{"_".join(path_parts)}'
+
+        if self.__cache_in_files.is_exist(cache_key):
+            logging.info(f'{path} was read from cache')
+
+            return self.__cache_in_files.get(cache_key)
 
         response = session.get(f'{self.base_url}/download_by_name/',
-                               headers=headers,
-                               params={'filename': path})
-        if response.status_code != 206:
+                               params={'filename': path},
+                               stream=True)
+
+        if response.status_code != 200:
             return -errno.EIO
 
-        logging.debug(f"read response status: {response.status_code}")
+        blocks_size = 4096
+        cached_file_path = os.path.join(self.__cache_in_files.cache_dir, '_'.join(path_parts))
 
-        return response.content
+        logging.info(f'Saving file {path}...')
+
+        try:
+            with open(cached_file_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=blocks_size):
+                    f.write(chunk)
+
+        except (Exception,) as e:
+            logging.critical(f'Can"t save file {path}: {str(e)}')
+
+        self.__cache_in_files.set(cache_key, cached_file_path, datetime.timedelta(days=1))
+
+        logging.info(f'File {path} saved to cache')
+
+        return self.__cache_in_files.get_with_offset(cache_key, offset, size)
+
+    def read(self, path, size, offset, fh):
+        if path not in self.__required_to_read_files:
+            return -errno.EBADF
+
+        logging.info(self.__required_to_read_files)
+
+        path_parts = path[1:].split('/')
+
+        if len(path_parts) == 1:
+            return -errno.EISDIR
+
+        logging.info(f'Reading file {path}...')
+
+        cache_key = f'read-{"_".join(path_parts)}'
+
+        if self.__cache_in_files.is_exist(cache_key):
+            logging.info(f'{path} was read from cache')
+
+            return self.__cache_in_files.get_with_offset(cache_key, offset, size)
+
+        response = session.get(f'{self.base_url}/download_by_name/',
+                               params={'filename': path},
+                               stream=True)
+
+        logging.info(f'Response status code from download by name: {response.status_code}')
+
+        if response.status_code != 200:
+            return -errno.EIO
+
+        blocks_size = 4096
+        cached_file_path = os.path.join(self.__cache_in_files.cache_dir, '_'.join(path_parts))
+
+        logging.info(f'Saving file {path}...')
+
+        try:
+            with open(cached_file_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=blocks_size):
+                    f.write(chunk)
+
+        except (Exception,) as e:
+            logging.critical(f'Can"t save file {path}: {str(e)}')
+
+        self.__cache_in_files.set(cache_key, cached_file_path, datetime.timedelta(days=1))
+
+        logging.info(f'File {path} saved to cache')
+
+        return self.__cache_in_files.get_with_offset(cache_key, offset, size)
+
+    def open(self, path, flags):
+        logging.info(f'Trying to open a file: {path}...')
+
+        url = f'{self.base_url}/fuse/file/exists'
+
+        response = session.get(url,
+                               params={'path': path})
+
+        logging.info(f'Response code: {response.status_code}')
+
+        if response.status_code == 404:
+            return -errno.ENOENT
+        elif response.status_code != 200:
+            return -errno.EIO
+
+        self.__required_to_read_files.add(path)
+
+        return 0
+
+    def opendir(self, path):
+        logging.info(f'Trying to open a dir: {path}')
+
+        return 0
 
     def readdir(self, path, fh):
         logging.info(f'Reading dir: {path}...')
@@ -88,10 +185,10 @@ class HTTPApiFilesystem(Operations):
 
         cache_key = f'readdir-{path}'
 
-        if self.cache_in_memory.is_exist(cache_key):
+        if self.__cache_in_memory.is_exist(cache_key):
             logging.info(f'Dir {path} was read from cache')
 
-            return self.cache_in_memory.get(cache_key)
+            return self.__cache_in_memory.get(cache_key)
 
         response = session.get(url)
 
@@ -100,9 +197,12 @@ class HTTPApiFilesystem(Operations):
 
         directory_contents = ['.', '..'] + response.json()
 
-        self.cache_in_memory.set(cache_key, directory_contents, datetime.timedelta(minutes=5))
+        self.__cache_in_memory.set(cache_key, directory_contents, datetime.timedelta(minutes=1))
 
         return directory_contents
+
+    def __del__(self):
+        self.__cache_in_files.clear()
 
 
 if __name__ == '__main__':
