@@ -119,40 +119,39 @@ class HTTPApiFilesystem(Operations):
 
         logging.info(f'Reading file {path}...')
 
-        cache_key = f'read-{"_".join(path_parts)}'
+        cache_key = f'read-{offset}-{size}-{"_".join(path_parts)}'
 
         if self.__cache_in_files.is_exist(cache_key):
             logging.info(f'{path} was read from cache')
 
-            return self.__cache_in_files.get_with_offset(cache_key, offset, size)
+            return self.__cache_in_files.get(cache_key)
 
         response = session.get(f'{self.base_url}/download_by_name/',
-                               params={'filename': path},
-                               stream=True)
+                               params={'filename': path,
+                                       'offset': offset,
+                                       'chunk_size': size})
 
         logging.info(f'Response status code from download by name: {response.status_code}')
 
-        if response.status_code != 200:
+        if response.status_code != 206 and response.status_code != 200:
             return -errno.EIO
 
-        blocks_size = 4096
-        cached_file_path = os.path.join(self.__cache_in_files.cache_dir, '_'.join(path_parts))
+        cached_file_path = os.path.join(self.__cache_in_files.cache_dir, f"{offset}-{size}-{'_'.join(path_parts)}")
 
         logging.info(f'Saving file {path}...')
 
         try:
             with open(cached_file_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=blocks_size):
-                    f.write(chunk)
+                f.write(response.content)
 
         except (Exception,) as e:
-            logging.critical(f'Can"t save file {path}: {str(e)}')
+            logging.critical(f'Can"t save file chunk for {path}: {str(e)}')
 
         self.__cache_in_files.set(cache_key, cached_file_path, datetime.timedelta(days=1))
 
-        logging.info(f'File {path} saved to cache')
+        logging.info(f'File chunk for {path} saved to cache')
 
-        return self.__cache_in_files.get_with_offset(cache_key, offset, size)
+        return self.__cache_in_files.get(cache_key)
 
     def open(self, path, flags):
         logging.info(f'Trying to open a file: {path}...')
