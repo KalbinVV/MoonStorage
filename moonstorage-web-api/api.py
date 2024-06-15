@@ -2,6 +2,7 @@ import datetime
 import json
 import logging
 import os
+import pathlib
 import shutil
 import stat
 from functools import wraps
@@ -173,7 +174,9 @@ def upload_file():
     if file.filename == '':
         raise Exception('Неправильное имя файла!')
 
-    uploaded_filename = f'{file.filename}-{str(datetime.datetime.now())}'
+    file_extension = pathlib.Path(file.filename).suffix
+
+    uploaded_filename = f'{file.filename}-{str(datetime.datetime.now())}{file_extension}'
 
     temp_path = os.path.join('temp', uploaded_filename)
     os.makedirs('temp/', exist_ok=True)
