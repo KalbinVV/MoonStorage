@@ -1,19 +1,16 @@
 import datetime
 import json
-import logging
 import os
 import pathlib
 import shutil
 import stat
 from functools import wraps
-from io import BytesIO
 from typing import Callable, NoReturn
 
 import psycopg2
 from Crypto.Cipher import AES
 from flask import Flask, request, abort, make_response, send_file, after_this_request, Response
 import requests
-from werkzeug.wsgi import FileWrapper
 
 from helper_classes import ConnectionArgs
 
@@ -343,7 +340,7 @@ def fuse_get_file():
 
     if len(path_parts) == 1:
         return {
-            'mode': stat.S_IFDIR,
+            'mode': stat.S_IFDIR | 0o755,
             'nlink': 0,
             'size': 1,
             "atime": 1625247600,
@@ -366,7 +363,7 @@ def fuse_get_file():
             return '', 404
 
         return {
-            'mode': stat.S_IFREG,
+            'mode': stat.S_IFREG | 0o644,
             'nlink': 0,
             'size': file_info['size'],
             "atime": 1625247600,
@@ -422,12 +419,3 @@ def fuse_check_file_exists():
 def check_health():
     return 'alive'
 
-
-def main():
-    app.run(host='0.0.0.0', debug=True)
-
-    shutil.rmtree(app.config['UPLOAD_FOLDER'])
-
-
-if __name__ == '__main__':
-    main()
