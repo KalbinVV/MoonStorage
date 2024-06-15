@@ -200,6 +200,12 @@ class HTTPApiFilesystem(Operations):
 
         return directory_contents
 
+    def chmod(self, path, mode):
+        return 0
+
+    def chown(self, path, uid, gid):
+        return 0
+
     def __del__(self):
         self.__cache_in_files.clear()
 
