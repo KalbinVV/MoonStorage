@@ -6,18 +6,20 @@ import pathlib
 import shutil
 import stat
 from functools import wraps
+from io import BytesIO
 from typing import Callable, NoReturn
 
 import psycopg2
-from flask import Flask, request, abort, make_response, send_file, after_this_request
+from Crypto.Cipher import AES
+from flask import Flask, request, abort, make_response, send_file, after_this_request, Response
 import requests
+from werkzeug.wsgi import FileWrapper
 
 from helper_classes import ConnectionArgs
 
 from utils import auth_utils, security_utils
 
 from decorators import auth_decorators
-
 
 app = Flask(__name__)
 
@@ -182,6 +184,8 @@ def upload_file():
     os.makedirs('temp/', exist_ok=True)
     file.save(temp_path)
 
+    uploaded_file_size = os.path.getsize(temp_path)
+
     secret_key = security_utils.get_random_aes_key()
 
     upload_path = os.path.join(app.config['UPLOAD_FOLDER'], uploaded_filename)
@@ -198,7 +202,6 @@ def upload_file():
         response = requests.post(f'{connection_args.ipfs_rpc_url}/api/v0/add', files={'file': f}).json()
 
         uploaded_file_cid = response['Hash']
-        uploaded_file_size = response['Size']
 
         with psycopg2.connect(dbname='ipfs',
                               user=connection_args.username,
@@ -287,6 +290,7 @@ def get_file_by_name():
             cursor.execute('select filename, private_key, cid from registry '
                            'where role=%s and filename=%s', (path_parts[0], path_parts[1]))
 
+            app.logger.info(f'Read file: {filename}')
             app.logger.info(f'Path parts: {path_parts}')
 
             found_file = cursor.fetchone()
@@ -303,22 +307,27 @@ def get_file_by_name():
                 temp_encrypt_path = os.path.join('temp', f'{filename}-encrypted')
                 temp_decrypt_path = os.path.join('temp', filename)
 
+                offset = int(request.args.get('offset'))
+                chunk_size = int(request.args.get('chunk_size'))
+
+                app.logger.info(f'Requested offset: {offset} and chunk_size: {chunk_size} for {filename}')
+
                 with open(temp_encrypt_path, 'wb') as encrypted_file:
                     encrypted_file.write(response.content)
 
-                security_utils.decrypt_file(temp_encrypt_path,
-                                            temp_decrypt_path,
-                                            secret_key)
+                with open(temp_encrypt_path, 'rb') as encrypted_file:
+                    iv = encrypted_file.read(AES.block_size)
 
-                @after_this_request
-                def remove_file(rsp):
-                    try:
-                        os.remove(temp_decrypt_path)
-                    except Exception as error:
-                        app.logger.error("Error removing file: %s", error)
-                    return rsp
+                    encrypted_file.seek(offset, 1)
 
-                return send_file(temp_decrypt_path, download_name=filename)
+                    chunk = encrypted_file.read(chunk_size)
+
+                required_chunk = security_utils.decrypt_certain_chunk(secret_key,
+                                                                      iv,
+                                                                      offset,
+                                                                      chunk)
+
+                return required_chunk
 
             else:
                 abort(404)
@@ -358,7 +367,7 @@ def fuse_get_file():
 
         try:
             file_info = HelperFuncs.get_file_info_by_name(role, filename)
-        except (FileNotFoundError, ):
+        except (FileNotFoundError,):
             return '', 404
 
         return {
