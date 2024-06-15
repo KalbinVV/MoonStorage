@@ -300,27 +300,22 @@ def get_file_by_name():
 
                 file_url = f'{connection_args.ipfs_api_url}/ipfs/{file_cid}'
 
-                response = requests.get(file_url)
+                offset = int(request.args.get('offset'))
+                chunk_size = int(request.args.get('chunk_size'))
+                offset_with_iv = offset + AES.block_size
+
+                headers_for_chunk = {'Range': f'bytes={offset_with_iv}-{offset_with_iv + chunk_size - 1}'}
+                headers_for_iv = {'Range': 'bytes=0-15'}
+
+                response_get_iv = requests.get(file_url, headers=headers_for_iv)
+                response_get_chunk = requests.get(file_url, headers=headers_for_chunk)
 
                 os.makedirs('temp/', exist_ok=True)
 
-                temp_encrypt_path = os.path.join('temp', f'{filename}-encrypted')
-                temp_decrypt_path = os.path.join('temp', filename)
-
-                offset = int(request.args.get('offset'))
-                chunk_size = int(request.args.get('chunk_size'))
-
                 app.logger.info(f'Requested offset: {offset} and chunk_size: {chunk_size} for {filename}')
 
-                with open(temp_encrypt_path, 'wb') as encrypted_file:
-                    encrypted_file.write(response.content)
-
-                with open(temp_encrypt_path, 'rb') as encrypted_file:
-                    iv = encrypted_file.read(AES.block_size)
-
-                    encrypted_file.seek(offset, 1)
-
-                    chunk = encrypted_file.read(chunk_size)
+                iv = response_get_iv.content
+                chunk = response_get_chunk.content
 
                 required_chunk = security_utils.decrypt_certain_chunk(secret_key,
                                                                       iv,
