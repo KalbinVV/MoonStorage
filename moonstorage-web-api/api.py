@@ -14,7 +14,7 @@ import requests
 
 from helper_classes import ConnectionArgs
 
-from utils import auth_utils, security_utils
+from utils import auth_utils, security_utils, hash_utils
 
 from decorators import auth_decorators
 
@@ -48,7 +48,7 @@ class HelperFuncs:
                               host=connection_args.db_host,
                               port=connection_args.db_port) as connection:
             with connection.cursor() as cursor:
-                cursor.execute('select filename from registry '
+                cursor.execute('select name from registry '
                                'where role=%s', (role_name,))
 
                 return [file[0] for file in cursor.fetchall()]
@@ -66,7 +66,7 @@ class HelperFuncs:
                 app.logger.info(f'Role: {role}\nFile name:{filename}')
 
                 cursor.execute('select file_size from registry '
-                               'where role=%s and filename=%s', (role, filename))
+                               'where role=%s and name=%s', (role, filename))
 
                 found_file = cursor.fetchone()
 
@@ -149,7 +149,7 @@ def get_available_files_list():
                           host=connection_args.db_host,
                           port=connection_args.db_port) as connection:
         with connection.cursor() as cursor:
-            cursor.execute('select cid, filename, role from registry;')
+            cursor.execute('select cid, name, role from registry;')
 
             return [{'cid': file_info[0],
                      'filename': file_info[1],
@@ -175,17 +175,20 @@ def upload_file():
 
     file_extension = pathlib.Path(file.filename).suffix
 
-    uploaded_filename = f'{file.filename}-{str(datetime.datetime.now())}{file_extension}'
+    uploaded_filename = f'{file.filename}{file_extension}'
+    temp_filename = f'{file.filename}{datetime.datetime.now()}{file_extension}'
 
-    temp_path = os.path.join('temp', uploaded_filename)
+    temp_path = os.path.join('temp', temp_filename)
     os.makedirs('temp/', exist_ok=True)
     file.save(temp_path)
+
+    file_hash = hash_utils.get_hash_of_file(temp_filename)
 
     uploaded_file_size = os.path.getsize(temp_path)
 
     secret_key = security_utils.get_random_aes_key()
 
-    upload_path = os.path.join(app.config['UPLOAD_FOLDER'], uploaded_filename)
+    upload_path = os.path.join(app.config['UPLOAD_FOLDER'], temp_filename)
 
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
@@ -206,13 +209,14 @@ def upload_file():
                               host=connection_args.db_host,
                               port=connection_args.db_port) as connection:
             with connection.cursor() as cursor:
-                cursor.execute("insert into registry_data(cid, filename, private_key, role, file_size) "
-                               "values(%s, %s, %s, %s, %s)",
+                cursor.execute("insert into registry_data(cid, name, secret_key, role, file_size, file_hash) "
+                               "values(%s, %s, %s, %s, %s, %s)",
                                (uploaded_file_cid, uploaded_filename, psycopg2.Binary(secret_key), required_role,
-                                uploaded_file_size))
+                                uploaded_file_size, file_hash))
 
                 return {'cid': uploaded_file_cid,
-                        'size': uploaded_file_size}
+                        'size': uploaded_file_size,
+                        'hash': file_hash}
 
 
 @app.route('/download/<file_cid>', methods=['GET'])
@@ -226,7 +230,7 @@ def get_file(file_cid: str):
                           host=connection_args.db_host,
                           port=connection_args.db_port) as connection:
         with connection.cursor() as cursor:
-            cursor.execute('select filename, private_key from registry '
+            cursor.execute('select name, secret_key from registry '
                            'where cid=%s', (file_cid,))
 
             found_file = cursor.fetchone()
@@ -284,8 +288,8 @@ def get_file_by_name():
                           host=connection_args.db_host,
                           port=connection_args.db_port) as connection:
         with connection.cursor() as cursor:
-            cursor.execute('select filename, private_key, cid from registry '
-                           'where role=%s and filename=%s', (path_parts[0], path_parts[1]))
+            cursor.execute('select name, secret_key, cid from registry '
+                           'where role=%s and name=%s', (path_parts[0], path_parts[1]))
 
             app.logger.info(f'Read file: {filename}')
             app.logger.info(f'Path parts: {path_parts}')
@@ -404,7 +408,7 @@ def fuse_check_file_exists():
                           host=connection_args.db_host,
                           port=connection_args.db_port) as connection:
         with connection.cursor() as cursor:
-            cursor.execute("select file_size from registry where role=%s and filename=%s",
+            cursor.execute("select file_size from registry where role=%s and name=%s",
                            (path_parts[0], path_parts[1]))
 
             found_file = cursor.fetchone()

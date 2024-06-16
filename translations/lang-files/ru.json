@@ -37,9 +37,6 @@
     "user-entered-value": "> {user_input}",
     "is_true_question": "Это верно? (y, n): ",
     "check_func_invalid": "Введено неверное значение!",
-
-    "admin_user-input": {
-
-    }
+    "build-dir-input": "Введите путь к директории установки ({default_dir}): "
   }
 }

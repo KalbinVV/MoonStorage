@@ -2,13 +2,18 @@ create table if not exists roles (
 	name varchar primary key
 );
 
+CREATE TYPE file_type AS ENUM ('file', 'directory');
+
 create table if not exists registry_data (
 	cid varchar primary key,
-	filename varchar not null,
-	private_key bytea not null,
+	name varchar not null,
+	type file_type not null,
+	secret_key bytea not null,
 	owned_by varchar not null,
 	role varchar not null,
 	file_size integer not null,
+	file_hash varchar[256] not null,
+	uploaded_at timestamp DEFAULT now(),
 	foreign key(role) references roles(name) on delete restrict
 );
 
@@ -27,11 +32,13 @@ AS SELECT role
 
 CREATE OR REPLACE VIEW registry
 AS SELECT cid,
-    filename,
-    private_key,
+    name,
+    secret_key,
     owned_by,
     role,
-    file_size
+    file_size,
+    file_hash,
+    uploaded_at
    FROM registry_data rg
   WHERE (role::text IN (select role from user_roles));
 

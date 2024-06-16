@@ -65,4 +65,4 @@ result_nginx_dockerfile_path = 'nginx-dockerfile'
 couchdb_initializer_script_path = os.path.join('templates', 'couchdb-initializer.sh')
 result_couchdb_initializer_script_path = 'couchdb-initializer.sh'
 
-default_setup_build_path = 'build/'
+default_build_dir = 'build/'

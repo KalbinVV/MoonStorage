@@ -10,11 +10,12 @@ from typing import Callable
 
 def make_file_from_template(template_path: str,
                             result_file_path: str,
+                            build_dir_path: str,
                             **fields):
     with open(template_path, 'r') as f:
         content = f.read().format(**fields)
 
-    final_result_path = os.path.join(config.default_setup_build_path, result_file_path)
+    final_result_path = os.path.join(build_dir_path, result_file_path)
 
     os.makedirs(os.path.dirname(final_result_path), exist_ok=True)
 
@@ -24,6 +25,7 @@ def make_file_from_template(template_path: str,
 
 def make_file_from_template_with_replace(template_path: str,
                                          result_file_path: str,
+                                         build_dir_path: str,
                                          **replacements):
     with open(template_path, 'r') as f:
         content = f.read()
@@ -31,7 +33,7 @@ def make_file_from_template_with_replace(template_path: str,
     for key, value in replacements.items():
         content = content.replace(key, str(value))
 
-    final_result_path = os.path.join(config.default_setup_build_path, result_file_path)
+    final_result_path = os.path.join(build_dir_path, result_file_path)
 
     os.makedirs(os.path.dirname(final_result_path), exist_ok=True)
 
@@ -126,6 +128,10 @@ def run_setup_cli():
                                   check_func=lambda value: value in {'root', 'child'},
                                   default_mode=config.default_ipfs_node_mode)
 
+    build_dir = _enter_value('setup.build-dir-input',
+                             config.default_build_dir,
+                             default_dir=config.default_build_dir)
+
     if ipfs_node_mode == 'root':
         docker_compose_path = config.docker_compose_template_private_root_path \
             if ipfs_network_mode == 'private' else config.docker_compose_template_public_root_path
@@ -135,6 +141,7 @@ def run_setup_cli():
 
     make_file_from_template(docker_compose_path,
                             config.result_docker_compose_path,
+                            build_dir,
                             postgres_container_name=postgres_container_name,
                             postgres_version=postgres_version,
                             postgres_port=postgres_port,
@@ -157,7 +164,8 @@ def run_setup_cli():
             else config.ipfs_init_public_root_script_path
 
         make_file_from_template(ipfs_init_path,
-                                config.ipfs_init_result_path)
+                                config.ipfs_init_result_path,
+                                build_dir)
     else:
         ipfs_init_path = config.ipfs_init_private_child_script_path if ipfs_network_mode == 'private' \
             else config.ipfs_init_public_child_script_path
@@ -168,10 +176,11 @@ def run_setup_cli():
 
         make_file_from_template(ipfs_init_path,
                                 config.ipfs_init_result_path,
+                                build_dir,
                                 root_node_addr=root_node_addr)
 
     shutil.copytree(src='./',
-                    dst=config.default_setup_build_path,
+                    dst=build_dir,
                     dirs_exist_ok=True,
                     ignore=shutil.ignore_patterns('build',
                                                   'templates',
