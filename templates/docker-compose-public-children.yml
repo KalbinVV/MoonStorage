@@ -23,6 +23,10 @@ services:
     build:
       context: moonstorage-web-api
       dockerfile: ./Dockerfile
+    volumes:
+      - type: bind
+        source: ./moonstorage-web-api
+        target: /app/
   nginx:
     container_name: nginx
     build:
@@ -32,6 +36,10 @@ services:
       - 5000:5000
     links:
       - api
+    volumes:
+      - type: bind
+        source: ./moonstorage-web-api/nginx.conf
+        target: /etc/nginx/conf.d/default.conf
 
 volumes:
   {ipfs_container_name}-export-volume:

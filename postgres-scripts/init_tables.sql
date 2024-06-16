@@ -12,7 +12,7 @@ create table if not exists registry_data (
 	owned_by varchar not null,
 	role varchar not null,
 	file_size integer not null,
-	file_hash varchar[256] not null,
+	file_hash varchar(256) not null,
 	uploaded_at timestamp DEFAULT now(),
 	foreign key(role) references roles(name) on delete restrict
 );

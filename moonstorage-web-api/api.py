@@ -175,14 +175,15 @@ def upload_file():
 
     file_extension = pathlib.Path(file.filename).suffix
 
-    uploaded_filename = f'{file.filename}{file_extension}'
+    uploaded_filename = f'{file.filename}'
     temp_filename = f'{file.filename}{datetime.datetime.now()}{file_extension}'
 
     temp_path = os.path.join('temp', temp_filename)
     os.makedirs('temp/', exist_ok=True)
     file.save(temp_path)
 
-    file_hash = hash_utils.get_hash_of_file(temp_filename)
+    file_hash = hash_utils.get_hash_of_file(temp_path)
+
 
     uploaded_file_size = os.path.getsize(temp_path)
 
@@ -209,8 +210,10 @@ def upload_file():
                               host=connection_args.db_host,
                               port=connection_args.db_port) as connection:
             with connection.cursor() as cursor:
-                cursor.execute("insert into registry_data(cid, name, secret_key, role, file_size, file_hash) "
-                               "values(%s, %s, %s, %s, %s, %s)",
+                app.logger.debug(uploaded_file_cid)
+
+                cursor.execute("insert into registry_data(cid, name, secret_key, role, file_size, file_hash, type) "
+                               "values(%s, %s, %s, %s, %s, %s, 'file')",
                                (uploaded_file_cid, uploaded_filename, psycopg2.Binary(secret_key), required_role,
                                 uploaded_file_size, file_hash))
 
@@ -422,4 +425,8 @@ def fuse_check_file_exists():
 @app.route('/health', methods=['GET'])
 def check_health():
     return 'alive'
+
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5050, debug=True)
 
