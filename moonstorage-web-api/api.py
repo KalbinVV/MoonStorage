@@ -78,6 +78,21 @@ class HelperFuncs:
                         'uploaded_at': found_file[1],
                         'cid': found_file[2]}
 
+    @staticmethod
+    def check_if_file_is_available_in_ipfs(file_cid: str) -> bool:
+        connection_args = auth_utils.get_connection_args()
+
+        file_url = f'{connection_args.ipfs_api_url}/ipfs/{file_cid}'
+
+        try:
+            requests.get(file_url,
+                         timeout=1,
+                         headers={'Range': f'bytes=0-15'})
+        except (Exception, ):
+            return False
+
+        return True
+
 
 def get_value_from_form_or_raise_exception(key: str, exception_message: str) -> str | NoReturn:
     value = request.form.get(key)
@@ -175,6 +190,8 @@ def upload_file():
 
     if file.filename == '':
         raise Exception('Неправильное имя файла!')
+
+    logging.info(f'Uploading a new file {file.filename} with role {required_role}...')
 
     file_extension = pathlib.Path(file.filename).suffix
 

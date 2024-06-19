@@ -149,11 +149,6 @@ class HTTPApiFilesystem(Operations):
 
         return 0
 
-    def opendir(self, path):
-        logging.info(f'Trying to open a dir: {path}')
-
-        return 0
-
     def readdir(self, path, fh):
         logging.info(f'Reading dir: {path}...')
 
@@ -176,12 +171,6 @@ class HTTPApiFilesystem(Operations):
         self.__cache_in_memory.set(cache_key, directory_contents, datetime.timedelta(minutes=1))
 
         return directory_contents
-
-    def chmod(self, path, mode):
-        return 0
-
-    def chown(self, path, uid, gid):
-        return 0
 
     def create(self, path, mode, fi=None):
         logging.info(f'Created new file {path}!')
@@ -226,9 +215,9 @@ class HTTPApiFilesystem(Operations):
             args = path[1:].split('/')
 
             if len(args) == 1:
-                raise FuseOSError(errno.EIO)
+                raise FuseOSError(errno.EPERM)
 
-            filename, role = args
+            role, filename = args
 
             files = {'file': (filename, self.__buffer_to_write[path])}
 
@@ -237,7 +226,7 @@ class HTTPApiFilesystem(Operations):
 
                 response = session.post(url,
                                         files=files,
-                                        timeout=5,
+                                        timeout=30,
                                         data={'role': role})
 
                 logging.info(f'File {path} uploaded!')
@@ -250,8 +239,9 @@ class HTTPApiFilesystem(Operations):
 
                 raise FuseOSError(errno.EIO)
 
+            self.__files[path].cid = response.json()['cid']
+
             del self.__buffer_to_write[path]
-            del self.__files[path]
 
         return 0
 
