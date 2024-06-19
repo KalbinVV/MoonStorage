@@ -1,5 +1,6 @@
 import datetime
 import json
+import logging
 import os
 import pathlib
 import stat
@@ -158,7 +159,7 @@ def get_available_files_list():
                      'role': file_info[2]} for file_info in cursor.fetchall()]
 
 
-@app.route('/upload_file', methods=['POST'])
+@app.route('/upload', methods=['POST'])
 @wrap_to_valid_responses
 @auth_decorators.auth_required
 def upload_file():
@@ -185,7 +186,6 @@ def upload_file():
     file.save(temp_path)
 
     file_hash = hash_utils.get_hash_of_file(temp_path)
-
 
     uploaded_file_size = os.path.getsize(temp_path)
 
@@ -370,5 +370,13 @@ def check_health():
 
 
 if __name__ == '__main__':
+    file_log = logging.FileHandler('logs.log')
+    console_out = logging.StreamHandler()
+
+    logging.basicConfig(handlers=(file_log, console_out),
+                        format='[%(asctime)s | %(levelname)s]: %(message)s',
+                        datefmt='%m.%d.%Y %H:%M:%S',
+                        level=logging.DEBUG)
+
     app.run(host='0.0.0.0', port=5050, debug=True)
 

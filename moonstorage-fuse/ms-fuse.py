@@ -1,10 +1,10 @@
-import abc
 import dataclasses
 import datetime
 import os
 import errno
-from stat import S_IFREG
+import stat
 from time import time
+from typing import Optional
 
 import requests
 from fuse import FUSE, Operations, FuseOSError
@@ -25,7 +25,7 @@ class FileInfo:
     CONTENT_FOLDER = 'cache'
 
     st: dict[str, str | int | bytes]
-    cid: str
+    cid: Optional[str]
 
     @property
     def chunks_folder(self) -> str:
@@ -61,6 +61,9 @@ class FilesStorage:
 
     def __setitem__(self, path: str, file_info: FileInfo) -> None:
         self.__files[path] = file_info
+
+    def __delitem__(self, path: str) -> None:
+        del self.__files[path]
 
 
 class HTTPApiFilesystem(Operations):
@@ -183,21 +186,29 @@ class HTTPApiFilesystem(Operations):
     def create(self, path, mode, fi=None):
         logging.info(f'Created new file {path}!')
 
-        self.__now_created_files[path] = dict(st_mode=(S_IFREG | mode), st_nlink=1, st_size=0,
-                                              st_ctime=time(), st_mtime=time(), st_atime=time())
+        self.__files[path] = FileInfo(st={
+                'st_mode': stat.S_IFREG | 0o644,
+                'st_nlink': 0,
+                'st_size': 0,
+                'st_ctime': time(),  # Время создания
+                'st_mtime': time(),  # Время последнего изменения
+                'st_atime': time(),  # Время последнего доступа
+            }, cid=None)
 
         return 0
 
     def write(self, path, buf, offset, fh):
         logging.info(f'Writing a file {path}...')
 
-        if path not in self.__cache_in_files:
+        if path not in self.__buffer_to_write:
             self.__buffer_to_write[path] = bytearray()
 
         if len(self.__buffer_to_write[path]) < offset + len(buf):
             self.__buffer_to_write[path].extend(bytearray(offset + len(buf) - len(self.__buffer_to_write[path])))
 
         self.__buffer_to_write[path][offset:offset + len(buf)] = buf
+
+        self.__files[path].st['st_size'] += len(buf)
 
         return len(buf)
 
@@ -211,14 +222,36 @@ class HTTPApiFilesystem(Operations):
 
     def flush(self, path, fh):
         if path in self.__buffer_to_write:
-            url = f'{self.base_url}/upload_file/'
-            files = {'file': (path, self.__buffer_to_write[path])}
-            response = requests.post(url, files=files)
+            url = f'{self.base_url}/upload'
+            args = path[1:].split('/')
 
-            if response.status_code != 200:
-                raise -errno.EIO
+            if len(args) == 1:
+                raise FuseOSError(errno.EIO)
+
+            filename, role = args
+
+            files = {'file': (filename, self.__buffer_to_write[path])}
+
+            try:
+                logging.info(f'Uploading file {filename} with role {role}...')
+
+                response = session.post(url,
+                                        files=files,
+                                        timeout=5,
+                                        data={'role': role})
+
+                logging.info(f'File {path} uploaded!')
+
+                if response.status_code != 200:
+                    raise Exception(response.content.decode('utf-8'))
+
+            except (Exception, ) as e:
+                logging.error(f'Can"t upload file {path}: {str(e)}')
+
+                raise FuseOSError(errno.EIO)
 
             del self.__buffer_to_write[path]
+            del self.__files[path]
 
         return 0
 
