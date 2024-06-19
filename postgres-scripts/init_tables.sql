@@ -5,7 +5,8 @@ create table if not exists roles (
 CREATE TYPE file_type AS ENUM ('file', 'directory');
 
 create table if not exists registry_data (
-	cid varchar primary key,
+    id serial8 primary key,
+	cid varchar,
 	name varchar not null,
 	type file_type not null,
 	secret_key bytea not null,
