@@ -2,9 +2,9 @@ import datetime
 import json
 import os
 import pathlib
-import shutil
 import stat
 from functools import wraps
+from time import time
 from typing import Callable, NoReturn
 
 import psycopg2
@@ -14,7 +14,7 @@ import requests
 
 from helper_classes import ConnectionArgs
 
-from utils import auth_utils, security_utils, hash_utils
+from utils import auth_utils, security_utils, hash_utils, file_utils
 
 from decorators import auth_decorators
 
@@ -65,7 +65,7 @@ class HelperFuncs:
             with connection.cursor() as cursor:
                 app.logger.info(f'Role: {role}\nFile name:{filename}')
 
-                cursor.execute('select file_size from registry '
+                cursor.execute('select file_size, uploaded_at, cid from registry '
                                'where role=%s and name=%s', (role, filename))
 
                 found_file = cursor.fetchone()
@@ -73,7 +73,9 @@ class HelperFuncs:
                 if not found_file:
                     raise FileNotFoundError()
 
-                return {'size': found_file[0]}
+                return {'size': found_file[0],
+                        'uploaded_at': found_file[1],
+                        'cid': found_file[2]}
 
 
 def get_value_from_form_or_raise_exception(key: str, exception_message: str) -> str | NoReturn:
@@ -233,69 +235,8 @@ def get_file(file_cid: str):
                           host=connection_args.db_host,
                           port=connection_args.db_port) as connection:
         with connection.cursor() as cursor:
-            cursor.execute('select name, secret_key from registry '
-                           'where cid=%s', (file_cid,))
-
-            found_file = cursor.fetchone()
-
-            if found_file:
-                filename, secret_key = found_file[0], bytes(found_file[1])
-
-                file_url = f'{connection_args.ipfs_api_url}/ipfs/{file_cid}'
-
-                response = requests.get(file_url)
-
-                os.makedirs('temp/', exist_ok=True)
-
-                temp_encrypt_path = os.path.join('temp', f'{filename}-encrypted')
-                temp_decrypt_path = os.path.join('temp', filename)
-
-                with open(temp_encrypt_path, 'wb') as encrypted_file:
-                    encrypted_file.write(response.content)
-
-                security_utils.decrypt_file(temp_encrypt_path,
-                                            temp_decrypt_path,
-                                            secret_key)
-
-                # os.remove(temp_encrypt_path)
-                # Вернуть после того как придумаю как сделать адекватную передачу данных через fuse
-
-                # TODO: Сделать удаление файлов после расшифрования
-                '''
-                @after_this_request
-                def remove_file(_rsp):
-                    file_handle.close()
-                    os.remove(temp_decrypt_path)
-                '''
-
-                return send_file(temp_decrypt_path, download_name=filename)
-
-            else:
-                abort(404)
-
-
-@app.route('/download_by_name/', methods=['GET'])
-@auth_decorators.auth_required
-def get_file_by_name():
-    filename = request.args.get('filename')
-
-    app.logger.info(f'filename: {filename}')
-
-    path_parts = filename[1:].split('/')
-
-    connection_args = auth_utils.get_connection_args()
-
-    with psycopg2.connect(dbname='ipfs',
-                          user=connection_args.username,
-                          password=connection_args.password,
-                          host=connection_args.db_host,
-                          port=connection_args.db_port) as connection:
-        with connection.cursor() as cursor:
             cursor.execute('select name, secret_key, cid from registry '
-                           'where role=%s and name=%s', (path_parts[0], path_parts[1]))
-
-            app.logger.info(f'Read file: {filename}')
-            app.logger.info(f'Path parts: {path_parts}')
+                           'where cid=%s', (file_cid,))
 
             found_file = cursor.fetchone()
 
@@ -332,12 +273,6 @@ def get_file_by_name():
                 abort(404)
 
 
-@app.route('/files_in_role/{role_name}')
-@auth_decorators.auth_required
-def get_files_in_role(role_name: str):
-    HelperFuncs.get_files_in_role(role_name)
-
-
 @app.route('/fuse/info/')
 @auth_decorators.auth_required
 def fuse_get_file():
@@ -345,19 +280,27 @@ def fuse_get_file():
 
     path_parts = file_path[1:].split('/')
 
-    if len(path_parts) == 1:
-        return {
-            'mode': stat.S_IFDIR | 0o755,
-            'nlink': 0,
-            'size': 1,
-            "atime": 1625247600,
-            "mtime": 1625247600,
-            "ctime": 1625247600,
-            "ino": 12345,
-            "dev": 2049,
-            "uid": 1000,
-            "gid": 1000,
-        }
+    default_dict_for_folder = {
+        'st': {
+            'st_mode': stat.S_IFDIR | 0o755,
+            'st_nlink': 2,
+            'sn_size': 4096,
+            'st_ctime': time(),  # Время создания
+            'st_mtime': time(),  # Время последнего изменения
+            'st_atime': time(),  # Время последнего доступа
+        },
+        'cid': None
+    }
+
+    if file_path == '/':
+        return default_dict_for_folder
+    elif len(path_parts) == 1:
+        roles = HelperFuncs.get_user_roles()
+
+        if path_parts[0] in roles:
+            return default_dict_for_folder
+        else:
+            return 'Only roles is allowed by /', 404
     else:
         role = path_parts[0]
         filename = path_parts[1]
@@ -370,16 +313,15 @@ def fuse_get_file():
             return '', 404
 
         return {
-            'mode': stat.S_IFREG | 0o644,
-            'nlink': 0,
-            'size': file_info['size'],
-            "atime": 1625247600,
-            "mtime": 1625247600,
-            "ctime": 1625247600,
-            "ino": 12345,
-            "dev": 2049,
-            "uid": 1000,
-            "gid": 1000,
+            'st': {
+                'st_mode': stat.S_IFREG | 0o644,
+                'st_nlink': 0,
+                'st_size': file_info['size'],
+                'st_ctime': time(),  # Время создания
+                'st_mtime': time(),  # Время последнего изменения
+                'st_atime': time(),  # Время последнего доступа
+            },
+            'cid': file_info['cid']
         }
 
 

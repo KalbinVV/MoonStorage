@@ -1,4 +1,4 @@
-api_url = 'http://localhost:5000'
+api_url = 'http://localhost:5050'
 username = 'user_1'
 password = 'pass'
 db_host = '172.17.0.1'
