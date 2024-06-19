@@ -210,6 +210,9 @@ class HTTPApiFilesystem(Operations):
         return 0
 
     def flush(self, path, fh):
+        return 0
+
+    def release(self, path, fh):
         if path in self.__buffer_to_write:
             url = f'{self.base_url}/upload'
             args = path[1:].split('/')
