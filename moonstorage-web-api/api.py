@@ -49,7 +49,7 @@ class HelperFuncs:
                               host=connection_args.db_host,
                               port=connection_args.db_port) as connection:
             with connection.cursor() as cursor:
-                cursor.execute('select name from registry '
+                cursor.execute('select distinct name from registry '
                                'where role=%s', (role_name,))
 
                 return [file[0] for file in cursor.fetchall()]
@@ -67,7 +67,8 @@ class HelperFuncs:
                 app.logger.info(f'Role: {role}\nFile name:{filename}')
 
                 cursor.execute('select file_size, uploaded_at, cid from registry '
-                               'where role=%s and name=%s', (role, filename))
+                               'where role=%s and name=%s'
+                               ' order by uploaded_at desc', (role, filename))
 
                 found_file = cursor.fetchone()
 
@@ -88,7 +89,7 @@ class HelperFuncs:
             requests.get(file_url,
                          timeout=1,
                          headers={'Range': f'bytes=0-15'})
-        except (Exception, ):
+        except (Exception,):
             return False
 
         return True
@@ -231,10 +232,22 @@ def upload_file():
             with connection.cursor() as cursor:
                 app.logger.debug(uploaded_file_cid)
 
-                cursor.execute("insert into registry_data(cid, name, secret_key, role, file_size, file_hash, type) "
-                               "values(%s, %s, %s, %s, %s, %s, 'file')",
-                               (uploaded_file_cid, uploaded_filename, psycopg2.Binary(secret_key), required_role,
-                                uploaded_file_size, file_hash))
+                cursor.execute("select count(*) from registry "
+                               "where name=%s and role=%s", (uploaded_filename,
+                                                             required_role))
+
+                amount_of_files = cursor.fetchone()[0]
+
+                app.logger.info(f'Amount of file {uploaded_filename}: {amount_of_files}')
+
+                if amount_of_files == 0:
+                    cursor.execute("insert into registry_data(cid, name, secret_key, role, file_size, file_hash, type) "
+                                   "values(%s, %s, %s, %s, %s, %s, 'file')",
+                                   (uploaded_file_cid, uploaded_filename, psycopg2.Binary(secret_key), required_role,
+                                    uploaded_file_size, file_hash))
+                else:
+                    cursor.execute("update registry set cid=%s, file_size=%s, secret_key=%s",
+                                   (uploaded_file_cid, uploaded_file_size, secret_key))
 
                 return {'cid': uploaded_file_cid,
                         'size': uploaded_file_size,
@@ -253,7 +266,8 @@ def get_file(file_cid: str):
                           port=connection_args.db_port) as connection:
         with connection.cursor() as cursor:
             cursor.execute('select name, secret_key, cid from registry '
-                           'where cid=%s', (file_cid,))
+                           'where cid=%s '
+                           'order by uploaded_at desc', (file_cid,))
 
             found_file = cursor.fetchone()
 
@@ -269,8 +283,15 @@ def get_file(file_cid: str):
                 headers_for_chunk = {'Range': f'bytes={offset_with_iv}-{offset_with_iv + chunk_size - 1}'}
                 headers_for_iv = {'Range': 'bytes=0-15'}
 
-                response_get_iv = requests.get(file_url, headers=headers_for_iv)
-                response_get_chunk = requests.get(file_url, headers=headers_for_chunk)
+                try:
+                    response_get_iv = requests.get(file_url,
+                                                   headers=headers_for_iv,
+                                                   timeout=2)
+                    response_get_chunk = requests.get(file_url,
+                                                      headers=headers_for_chunk,
+                                                      timeout=2)
+                except (Exception,) as e:
+                    abort(404)
 
                 os.makedirs('temp/', exist_ok=True)
 
@@ -381,6 +402,44 @@ def fuse_check_file_exists():
                 return {'exists': True, 'size': found_file[0]}
 
 
+@app.route('/delete', methods=['POST'])
+@auth_decorators.auth_required
+def remove_file():
+    connection_args = auth_utils.get_connection_args()
+
+    role, filename = request.form.get('path')[1:].split('/')
+
+    with psycopg2.connect(dbname='ipfs',
+                          user=connection_args.username,
+                          password=connection_args.password,
+                          host=connection_args.db_host,
+                          port=connection_args.db_port) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute('delete from registry where role=%s and name=%s', (role, filename))
+
+            return {'ok': True}
+
+
+@app.route('/rename', methods=['PUT'])
+@auth_decorators.auth_required
+def rename_file():
+    connection_args = auth_utils.get_connection_args()
+
+    role, filename = request.form.get('old')[1:].split('/')
+    new_name = request.form.get('new')[1:].split('/')[1]
+
+    with psycopg2.connect(dbname='ipfs',
+                          user=connection_args.username,
+                          password=connection_args.password,
+                          host=connection_args.db_host,
+                          port=connection_args.db_port) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute('update registry set name=%s '
+                           'where role=%s and name=%s', (new_name, role, filename))
+
+            return {'ok': True}
+
+
 @app.route('/health', methods=['GET'])
 def check_health():
     return 'alive'
@@ -396,4 +455,3 @@ if __name__ == '__main__':
                         level=logging.DEBUG)
 
     app.run(host='0.0.0.0', port=5050, debug=True)
-
