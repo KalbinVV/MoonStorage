@@ -269,5 +269,5 @@ if __name__ == '__main__':
                                          'ipfs_api_url': ipfs_api_url})
 
     fuse = FUSE(HTTPApiFilesystem(api_url),
-                './mountpoint',
+                './MoonStorage',
                 foreground=True)
