@@ -49,7 +49,7 @@ class HelperFuncs:
                               host=connection_args.db_host,
                               port=connection_args.db_port) as connection:
             with connection.cursor() as cursor:
-                cursor.execute('select name from registry '
+                cursor.execute('select distinct name from registry '
                                'where role=%s', (role_name,))
 
                 return [file[0] for file in cursor.fetchall()]
@@ -67,7 +67,8 @@ class HelperFuncs:
                 app.logger.info(f'Role: {role}\nFile name:{filename}')
 
                 cursor.execute('select file_size, uploaded_at, cid from registry '
-                               'where role=%s and name=%s', (role, filename))
+                               'where role=%s and name=%s'
+                               ' order by uploaded_at desc', (role, filename))
 
                 found_file = cursor.fetchone()
 
@@ -231,10 +232,22 @@ def upload_file():
             with connection.cursor() as cursor:
                 app.logger.debug(uploaded_file_cid)
 
-                cursor.execute("insert into registry_data(cid, name, secret_key, role, file_size, file_hash, type) "
-                               "values(%s, %s, %s, %s, %s, %s, 'file')",
-                               (uploaded_file_cid, uploaded_filename, psycopg2.Binary(secret_key), required_role,
-                                uploaded_file_size, file_hash))
+                cursor.execute("select count(*) from registry "
+                               "where name=%s and role=%s", (uploaded_filename,
+                                                             required_role))
+
+                amount_of_files = cursor.fetchone()[0]
+
+                app.logger.info(f'Amount of file {uploaded_filename}: {amount_of_files}')
+
+                if amount_of_files == 0:
+                    cursor.execute("insert into registry_data(cid, name, secret_key, role, file_size, file_hash, type) "
+                                   "values(%s, %s, %s, %s, %s, %s, 'file')",
+                                   (uploaded_file_cid, uploaded_filename, psycopg2.Binary(secret_key), required_role,
+                                    uploaded_file_size, file_hash))
+                else:
+                    cursor.execute("update registry set cid=%s, file_size=%s, secret_key=%s",
+                                   (uploaded_file_cid, uploaded_file_size, secret_key))
 
                 return {'cid': uploaded_file_cid,
                         'size': uploaded_file_size,
@@ -253,7 +266,8 @@ def get_file(file_cid: str):
                           port=connection_args.db_port) as connection:
         with connection.cursor() as cursor:
             cursor.execute('select name, secret_key, cid from registry '
-                           'where cid=%s', (file_cid,))
+                           'where cid=%s '
+                           'order by uploaded_at desc', (file_cid,))
 
             found_file = cursor.fetchone()
 

@@ -3,6 +3,7 @@ import datetime
 import os
 import errno
 import stat
+import threading
 from stat import S_IFDIR
 from time import time
 from typing import Optional
@@ -73,7 +74,6 @@ class HTTPApiFilesystem(Operations):
 
         # Deprecated, should be removed
         self.__cache_in_memory = CachedFieldsStorageInMemory()
-        self.__cache_in_files = CachedFieldsStorageInFiles('cache')
         self.__required_to_read_files = set()
         self.__buffer_to_write = dict()
         self.__now_created_files = dict()
@@ -81,6 +81,7 @@ class HTTPApiFilesystem(Operations):
 
         # New files storage implementation, all upper it is deprecated
         self.__files = FilesStorage()
+        self.__release_lock = threading.Lock()
 
     def getattr(self, path, fh=None):
         logging.info(f"getattr called for path: {path}")
@@ -120,9 +121,6 @@ class HTTPApiFilesystem(Operations):
 
         file_info = self.__files[path]
 
-        if file_info.is_chunk_exists(offset, size):
-            return file_info.get_chunk(offset, size)
-
         try:
             response = session.get(f'{self.base_url}/download/{file_info.cid}',
                                    params={'offset': offset,
@@ -132,8 +130,6 @@ class HTTPApiFilesystem(Operations):
             logging.error(f'Can"t get chunk for: {path}: {e}')
 
             raise FuseOSError(errno.EIO)
-
-        file_info.write_chunk(offset, size, response.content)
 
         return response.content
 
@@ -196,66 +192,70 @@ class HTTPApiFilesystem(Operations):
         return 0
 
     def write(self, path, buf, offset, fh):
-        logging.info(f'Writing a file {path}...')
+        logging.info(f'Writing a file {path} with fh {fh}...')
 
-        if path not in self.__buffer_to_write:
-            self.__buffer_to_write[path] = bytearray()
+        buffer_path = f'{path}'
 
-        if len(self.__buffer_to_write[path]) < offset + len(buf):
-            self.__buffer_to_write[path].extend(bytearray(offset + len(buf) - len(self.__buffer_to_write[path])))
+        if buffer_path not in self.__buffer_to_write:
+            self.__buffer_to_write[buffer_path] = bytearray()
 
-        self.__buffer_to_write[path][offset:offset + len(buf)] = buf
+        if len(self.__buffer_to_write[buffer_path]) < offset + len(buf):
+            self.__buffer_to_write[buffer_path].extend(bytearray(offset + len(buf) - len(self.__buffer_to_write[buffer_path])))
+
+        self.__buffer_to_write[buffer_path][offset:offset + len(buf)] = buf
 
         self.__files[path].st['st_size'] += len(buf)
 
         return len(buf)
 
     def truncate(self, path, length, fh=None):
-        if path not in self.__cache_in_files:
+        path = f'{path}'
+
+        if path not in self.__buffer_to_write:
             self.__buffer_to_write[path] = bytearray(length)
         else:
             self.__buffer_to_write[path] = self.__buffer_to_write[path][:length]
 
         return 0
 
-    def flush(self, path, fh):
-        return 0
-
     def release(self, path, fh):
-        if path in self.__buffer_to_write:
-            url = f'{self.base_url}/upload'
-            args = path[1:].split('/')
+        buffer_path = f'{path}'
 
-            if len(args) == 1:
-                raise FuseOSError(errno.EPERM)
+        with self.__release_lock:
+            if buffer_path in self.__buffer_to_write:
+                url = f'{self.base_url}/upload'
+                args = path[1:].split('/')
 
-            role, filename = args
+                if len(args) == 1:
+                    raise FuseOSError(errno.EPERM)
 
-            files = {'file': (filename, self.__buffer_to_write[path])}
+                role, filename = args
 
-            try:
-                logging.info(f'Uploading file {filename} with role {role}...')
+                files = {'file': (filename, self.__buffer_to_write[buffer_path])}
 
-                response = session.post(url,
-                                        files=files,
-                                        timeout=30,
-                                        data={'role': role})
+                try:
+                    logging.info(f'Uploading file {filename} with role {role}...')
 
-                logging.info(f'File {path} uploaded!')
+                    response = session.post(url,
+                                            files=files,
+                                            timeout=30,
+                                            data={'role': role})
 
-                if response.status_code != 200:
-                    raise Exception(response.content.decode('utf-8'))
+                    logging.info(f'File {path} uploaded!')
 
-            except (Exception, ) as e:
-                logging.error(f'Can"t upload file {path}: {str(e)}')
+                    if response.status_code != 200:
+                        raise Exception(response.content.decode('utf-8'))
 
-                raise FuseOSError(errno.EIO)
+                except (Exception, ) as e:
+                    logging.error(f'Can"t upload file {path}: {str(e)}')
 
-            self.__files[path].cid = response.json()['cid']
+                    raise FuseOSError(errno.EIO)
 
-            del self.__buffer_to_write[path]
+                self.__files[path].cid = response.json()['cid']
 
-        return 0
+                del self.__buffer_to_write[buffer_path]
+
+            return 0
 
     def unlink(self, path):
         logging.info(f'unlink called for path: {path}')
@@ -275,11 +275,13 @@ class HTTPApiFilesystem(Operations):
 
         logging.info(f'File {path} successfully deleted')
 
-    def rename(self, old, new):
+    def rename(self, old, new, is_already_renamed: bool = False):
         logging.info(f"Renaming file from {old} to {new}...")
 
         if not self.__files.is_exists(old):
             raise FuseOSError(errno.ENOENT)
+
+        self.release(old, None)
 
         # Отправка запроса на сервер для переименования файла
         response = session.put(f'{self.base_url}/rename', data={'old': old, 'new': new})
@@ -288,17 +290,17 @@ class HTTPApiFilesystem(Operations):
             logging.error(f'Failed to rename file: {old} to {new}, response: {response.content}')
             raise FuseOSError(errno.EIO)
 
-        # Обновление информации о файле в локальном кэше
-        self.__files[new] = self.__files[old]
+        def _remove_if_exists(path):
+            if self.__files.is_exists(path):
+                del self.__files[path]
 
-        del self.__files[old]
+        # Обновление информации о файле в локальном кэше
+        _remove_if_exists(old)
+        _remove_if_exists(new)
 
         logging.info(f'File {old} successfully renamed to {new}')
 
         return 0
-
-    def __del__(self):
-        self.__cache_in_files.clear()
 
 
 if __name__ == '__main__':
