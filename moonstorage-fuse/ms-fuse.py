@@ -3,6 +3,7 @@ import datetime
 import os
 import errno
 import stat
+from stat import S_IFDIR
 from time import time
 from typing import Optional
 
@@ -84,6 +85,9 @@ class HTTPApiFilesystem(Operations):
     def getattr(self, path, fh=None):
         logging.info(f"getattr called for path: {path}")
 
+        if path == '/':
+            return dict(st_mode=(S_IFDIR | 0o755), st_nlink=2)
+
         if self.__files.is_exists(path):
             return self.__files[path].st
 
@@ -110,6 +114,9 @@ class HTTPApiFilesystem(Operations):
 
     def read(self, path, size, offset, fh):
         logging.info(f'Reading file {path}...')
+
+        if path not in self.__required_to_read_files:
+            return
 
         file_info = self.__files[path]
 
@@ -166,9 +173,11 @@ class HTTPApiFilesystem(Operations):
         if response.status_code != 200:
             return -errno.EIO
 
+        logging.info(f'Dir {path} content: {response.json()}')
+
         directory_contents = ['.', '..'] + response.json()
 
-        self.__cache_in_memory.set(cache_key, directory_contents, datetime.timedelta(minutes=1))
+        self.__cache_in_memory.set(cache_key, directory_contents, datetime.timedelta(seconds=5))
 
         return directory_contents
 
@@ -248,6 +257,46 @@ class HTTPApiFilesystem(Operations):
 
         return 0
 
+    def unlink(self, path):
+        logging.info(f'unlink called for path: {path}')
+
+        if not self.__files.is_exists(path):
+            raise FuseOSError(errno.ENOENT)
+
+        # Отправка запроса на сервер для удаления файла
+        response = session.post(f'{self.base_url}/delete', data={'path': path})
+
+        if response.status_code != 200:
+            logging.error(f'Failed to delete file: {path}, response: {response.content}')
+            raise FuseOSError(errno.EIO)
+
+        # Удаление информации о файле из локального кэша
+        del self.__files[path]
+
+        logging.info(f'File {path} successfully deleted')
+
+    def rename(self, old, new):
+        logging.info(f"Renaming file from {old} to {new}...")
+
+        if not self.__files.is_exists(old):
+            raise FuseOSError(errno.ENOENT)
+
+        # Отправка запроса на сервер для переименования файла
+        response = session.put(f'{self.base_url}/rename', data={'old': old, 'new': new})
+
+        if response.status_code != 200:
+            logging.error(f'Failed to rename file: {old} to {new}, response: {response.content}')
+            raise FuseOSError(errno.EIO)
+
+        # Обновление информации о файле в локальном кэше
+        self.__files[new] = self.__files[old]
+
+        del self.__files[old]
+
+        logging.info(f'File {old} successfully renamed to {new}')
+
+        return 0
+
     def __del__(self):
         self.__cache_in_files.clear()
 
@@ -270,4 +319,6 @@ if __name__ == '__main__':
 
     fuse = FUSE(HTTPApiFilesystem(api_url),
                 './MoonStorage',
-                foreground=True)
+                foreground=True,
+                ro=False,
+                )

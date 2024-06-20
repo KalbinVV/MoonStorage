@@ -388,6 +388,44 @@ def fuse_check_file_exists():
                 return {'exists': True, 'size': found_file[0]}
 
 
+@app.route('/delete', methods=['POST'])
+@auth_decorators.auth_required
+def remove_file():
+    connection_args = auth_utils.get_connection_args()
+
+    role, filename = request.form.get('path')[1:].split('/')
+
+    with psycopg2.connect(dbname='ipfs',
+                          user=connection_args.username,
+                          password=connection_args.password,
+                          host=connection_args.db_host,
+                          port=connection_args.db_port) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute('delete from registry where role=%s and name=%s', (role, filename))
+
+            return {'ok': True}
+
+
+@app.route('/rename', methods=['PUT'])
+@auth_decorators.auth_required
+def rename_file():
+    connection_args = auth_utils.get_connection_args()
+
+    role, filename = request.form.get('old')[1:].split('/')
+    new_name = request.form.get('new')[1:].split('/')[1]
+
+    with psycopg2.connect(dbname='ipfs',
+                          user=connection_args.username,
+                          password=connection_args.password,
+                          host=connection_args.db_host,
+                          port=connection_args.db_port) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute('update registry set name=%s '
+                           'where role=%s and name=%s', (new_name, role, filename))
+
+            return {'ok': True}
+
+
 @app.route('/health', methods=['GET'])
 def check_health():
     return 'alive'
