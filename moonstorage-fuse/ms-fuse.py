@@ -28,6 +28,7 @@ class FileInfo:
 
     st: dict[str, str | int | bytes]
     cid: Optional[str]
+    until: datetime.datetime
 
     @property
     def chunks_folder(self) -> str:
@@ -56,7 +57,15 @@ class FilesStorage:
         self.__files: dict[str, FileInfo] = dict()
 
     def is_exists(self, path: str) -> bool:
-        return path in self.__files
+        if path not in self.__files:
+            return False
+
+        file_info = self.__files[path]
+
+        if file_info.until and datetime.datetime.now() >= file_info.until:
+            return False
+
+        return True
 
     def __getitem__(self, path: str) -> FileInfo:
         return self.__files[path]
@@ -109,7 +118,8 @@ class HTTPApiFilesystem(Operations):
         logging.info(f'FileInfo for {path}: {file_info}')
 
         self.__files[path] = FileInfo(st=file_info['st'],
-                                      cid=file_info['cid'])
+                                      cid=file_info['cid'],
+                                      until=datetime.datetime.now() + datetime.timedelta(seconds=2))
 
         return file_info['st']
 
@@ -187,7 +197,7 @@ class HTTPApiFilesystem(Operations):
                 'st_ctime': time(),  # Время создания
                 'st_mtime': time(),  # Время последнего изменения
                 'st_atime': time(),  # Время последнего доступа
-            }, cid=None)
+            }, cid=None, until=None)
 
         return 0
 
@@ -320,7 +330,7 @@ if __name__ == '__main__':
                                          'ipfs_api_url': ipfs_api_url})
 
     fuse = FUSE(HTTPApiFilesystem(api_url),
-                './MoonStorage',
+                './MoonStorage-2',
                 foreground=True,
                 ro=False,
                 )
