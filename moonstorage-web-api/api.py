@@ -88,7 +88,7 @@ class HelperFuncs:
             requests.get(file_url,
                          timeout=1,
                          headers={'Range': f'bytes=0-15'})
-        except (Exception, ):
+        except (Exception,):
             return False
 
         return True
@@ -269,8 +269,15 @@ def get_file(file_cid: str):
                 headers_for_chunk = {'Range': f'bytes={offset_with_iv}-{offset_with_iv + chunk_size - 1}'}
                 headers_for_iv = {'Range': 'bytes=0-15'}
 
-                response_get_iv = requests.get(file_url, headers=headers_for_iv)
-                response_get_chunk = requests.get(file_url, headers=headers_for_chunk)
+                try:
+                    response_get_iv = requests.get(file_url,
+                                                   headers=headers_for_iv,
+                                                   timeout=2)
+                    response_get_chunk = requests.get(file_url,
+                                                      headers=headers_for_chunk,
+                                                      timeout=2)
+                except (Exception,) as e:
+                    abort(404)
 
                 os.makedirs('temp/', exist_ok=True)
 
@@ -396,4 +403,3 @@ if __name__ == '__main__':
                         level=logging.DEBUG)
 
     app.run(host='0.0.0.0', port=5050, debug=True)
-
