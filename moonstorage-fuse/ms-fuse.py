@@ -28,7 +28,8 @@ class FileInfo:
 
     st: dict[str, str | int | bytes]
     cid: Optional[str]
-    until: datetime.datetime
+    until: Optional[datetime.datetime] = None
+    directory_id: Optional[int] = None
 
     @property
     def chunks_folder(self) -> str:
@@ -102,14 +103,21 @@ class HTTPApiFilesystem(Operations):
             return self.__files[path].st
 
         try:
+            path_parts = path.split('/')
+
+            logging.info(f'Trying to get attr for file: {path}...')
+
             response = session.get(f'{self.base_url}/fuse/info',
-                                   params={'path': path},
+                                   params={'path': path,
+                                           'directory_id':
+                                               self.__files['/'.join(path_parts[:-1])].directory_id
+                                               if len(path_parts) > 2 else None},
                                    timeout=2)
 
-            if response.status_code == 404:
-                raise FileNotFoundError()
-        except (Exception,):
-            logging.info(f'File {path} not found!')
+            if response.status_code != 200:
+                raise FileNotFoundError(response.content)
+        except (Exception,) as e:
+            logging.info(f'File {path} not found: {str(e)}')
 
             raise FuseOSError(errno.ENOENT)
 
@@ -119,7 +127,8 @@ class HTTPApiFilesystem(Operations):
 
         self.__files[path] = FileInfo(st=file_info['st'],
                                       cid=file_info['cid'],
-                                      until=datetime.datetime.now() + datetime.timedelta(seconds=2))
+                                      until=datetime.datetime.now() + datetime.timedelta(seconds=2),
+                                      directory_id=file_info['id'])
 
         return file_info['st']
 
@@ -148,8 +157,13 @@ class HTTPApiFilesystem(Operations):
 
         url = f'{self.base_url}/fuse/file/exists'
 
+        path_parts = path.split('/')
+
+        directory_id = self.__files['/'.join(path_parts[:-1])].directory_id if len(path_parts) > 1 else None
+
         response = session.get(url,
-                               params={'path': path})
+                               params={'path': path,
+                                       'directory_id': directory_id})
 
         logging.info(f'Response code: {response.status_code}')
 
@@ -165,25 +179,30 @@ class HTTPApiFilesystem(Operations):
     def readdir(self, path, fh):
         logging.info(f'Reading dir: {path}...')
 
-        url = f'{self.base_url}/fuse/dir/read{path}'
+        url = f'{self.base_url}/fuse/dir/read'
 
-        cache_key = f'readdir-{path}'
+        data = dict()
 
-        if self.__cache_in_memory.is_exist(cache_key):
-            logging.info(f'Dir {path} was read from cache')
+        data['path'] = path
 
-            return self.__cache_in_memory.get(cache_key)
+        if path != '/' and self.__files[path].directory_id is not None:
+            data['directory_id'] = self.__files[path].directory_id
 
-        response = session.get(url)
+        try:
+            response = session.get(url,
+                                   data=data,
+                                   timeout=2)
 
-        if response.status_code != 200:
-            return -errno.EIO
+            if response.status_code != 200:
+                raise Exception(response.content)
+        except (Exception,) as e:
+            logging.error(f'Can"t read dir {path}: {str(e)}')
+
+            raise FuseOSError(errno.EIO)
 
         logging.info(f'Dir {path} content: {response.json()}')
 
         directory_contents = ['.', '..'] + response.json()
-
-        self.__cache_in_memory.set(cache_key, directory_contents, datetime.timedelta(seconds=5))
 
         return directory_contents
 
@@ -191,13 +210,13 @@ class HTTPApiFilesystem(Operations):
         logging.info(f'Created new file {path}!')
 
         self.__files[path] = FileInfo(st={
-                'st_mode': stat.S_IFREG | 0o644,
-                'st_nlink': 0,
-                'st_size': 0,
-                'st_ctime': time(),  # Время создания
-                'st_mtime': time(),  # Время последнего изменения
-                'st_atime': time(),  # Время последнего доступа
-            }, cid=None, until=None)
+            'st_mode': stat.S_IFREG | 0o644,
+            'st_nlink': 0,
+            'st_size': 0,
+            'st_ctime': time(),  # Время создания
+            'st_mtime': time(),  # Время последнего изменения
+            'st_atime': time(),  # Время последнего доступа
+        }, cid=None, until=None)
 
         return 0
 
@@ -210,7 +229,8 @@ class HTTPApiFilesystem(Operations):
             self.__buffer_to_write[buffer_path] = bytearray()
 
         if len(self.__buffer_to_write[buffer_path]) < offset + len(buf):
-            self.__buffer_to_write[buffer_path].extend(bytearray(offset + len(buf) - len(self.__buffer_to_write[buffer_path])))
+            self.__buffer_to_write[buffer_path].extend(
+                bytearray(offset + len(buf) - len(self.__buffer_to_write[buffer_path])))
 
         self.__buffer_to_write[buffer_path][offset:offset + len(buf)] = buf
 
@@ -239,24 +259,28 @@ class HTTPApiFilesystem(Operations):
                 if len(args) == 1:
                     raise FuseOSError(errno.EPERM)
 
-                role, filename = args
+                role = args[0]
 
-                files = {'file': (filename, self.__buffer_to_write[buffer_path])}
+                files = {'file': (args[-1],
+                                  self.__buffer_to_write[buffer_path])}
 
                 try:
-                    logging.info(f'Uploading file {filename} with role {role}...')
+                    logging.info(f'Uploading file {path} with role {role}...')
 
                     response = session.post(url,
                                             files=files,
                                             timeout=30,
-                                            data={'role': role})
+                                            data={'role': role,
+                                                  'directory_id':
+                                                      self.__files[f"/{'/'.join(args[:-1])}"].directory_id
+                                                      if len(args) > 1 else None})
 
                     logging.info(f'File {path} uploaded!')
 
                     if response.status_code != 200:
                         raise Exception(response.content.decode('utf-8'))
 
-                except (Exception, ) as e:
+                except (Exception,) as e:
                     logging.error(f'Can"t upload file {path}: {str(e)}')
 
                     raise FuseOSError(errno.EIO)
@@ -270,11 +294,19 @@ class HTTPApiFilesystem(Operations):
     def unlink(self, path):
         logging.info(f'unlink called for path: {path}')
 
+        # Костыль, позже нужно будет исправить как то
+        self.getattr(path)
+
         if not self.__files.is_exists(path):
             raise FuseOSError(errno.ENOENT)
 
+        path_parts = path.split('/')
+
+        directory_id = self.__files['/'.join(path_parts[:-1])].directory_id if len(path_parts) > 1 else None
+
         # Отправка запроса на сервер для удаления файла
-        response = session.post(f'{self.base_url}/delete', data={'path': path})
+        response = session.post(f'{self.base_url}/delete', data={'path': path,
+                                                                 'directory_id': directory_id})
 
         if response.status_code != 200:
             logging.error(f'Failed to delete file: {path}, response: {response.content}')
@@ -291,10 +323,53 @@ class HTTPApiFilesystem(Operations):
         if not self.__files.is_exists(old):
             raise FuseOSError(errno.ENOENT)
 
+        # При попытке переименовать папку
+        if stat.S_ISDIR(self.__files[old].st['st_mode']):
+            try:
+                response = session.put(f'{self.base_url}/rename_dir',
+                                       data={'new': new,
+                                             'directory_id': self.__files[old].directory_id},
+                                       timeout=2)
+
+                if response.status_code != 200:
+                    raise Exception(response.content)
+            except (Exception,) as e:
+                logging.error(f'Can"t rename directory {old}: {str(e)}')
+
+                raise FuseOSError(errno.ENOENT)
+
+            return
+
+        path_parts = old.split('/')
+        directory_id = self.__files['/'.join(path_parts[:-1])].directory_id if len(path_parts) > 1 else None
+
+        #  Перемещение файла в другой каталог
+        if old.split('/')[:-1] != new.split('/')[:-1]:
+            logging.info(f'Move {old} to {new}...')
+
+            path_parts = new.split('/')
+            to_directory_id = self.__files['/'.join(path_parts[:-1])].directory_id if len(path_parts) > 1 else None
+
+            try:
+                response = session.post(f'{self.base_url}/move', params={'filename': old,
+                                                                         'from_id': directory_id,
+                                                                         'to_id': to_directory_id})
+
+                if response.status_code != 200:
+                    raise Exception(response.content)
+
+                return
+            except (Exception,) as e:
+                logging.error(f'Can"t move file {old}: {str(e)}')
+
+        # При попытке загрузить файл
+
         self.release(old, None)
 
         # Отправка запроса на сервер для переименования файла
-        response = session.put(f'{self.base_url}/rename', data={'old': old, 'new': new})
+        response = session.put(f'{self.base_url}/rename', params={'old': old,
+                                                                  'new': new,
+                                                                  'directory_id': directory_id})
 
         if response.status_code != 200:
             logging.error(f'Failed to rename file: {old} to {new}, response: {response.content}')
@@ -309,6 +384,49 @@ class HTTPApiFilesystem(Operations):
         _remove_if_exists(new)
 
         logging.info(f'File {old} successfully renamed to {new}')
+
+        return 0
+
+    def mkdir(self, path, mode):
+        logging.info(f'mkdir called for path: {path}, mode: {mode}')
+
+        if path == '/':
+            raise FuseOSError(errno.EIO)
+        try:
+            path_parts = path.split('/')
+
+            response = session.post(f'{self.base_url}/mkdir',
+                                    data={'path': path,
+                                          'directory_id':
+                                              self.__files['/'.join(path_parts[:-1])].directory_id
+                                              if len(path_parts) > 1 else None},
+                                    timeout=2)
+
+            if response.status_code != 200:
+                raise Exception(response.content)
+        except (Exception,) as e:
+            logging.error(f'Can"t create a folder {path}: {str(e)}')
+
+            raise FuseOSError(errno.EIO)
+
+    def rmdir(self, path):
+        logging.info(f'rmdir called for path: {path}')
+
+        directory_id = self.__files[path].directory_id
+
+        try:
+            response = session.post(f'{self.base_url}/rmdir',
+                                    data={'directory_id': directory_id},
+                                    timeout=2)
+
+            if response.status_code != 200:
+                raise Exception(response.content)
+        except (Exception,) as e:
+            logging.error(f'Can"t remove directory {path}: {str(e)}')
+
+            raise FuseOSError(errno.EIO)
+
+        logging.info(f'Directory {path} successful removed!')
 
         return 0
 
@@ -333,4 +451,5 @@ if __name__ == '__main__':
                 './MoonStorage',
                 foreground=True,
                 ro=False,
+                encoding='utf-8'
                 )
