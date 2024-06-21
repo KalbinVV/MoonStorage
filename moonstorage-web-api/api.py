@@ -633,9 +633,14 @@ def move():
         with connection.cursor() as cursor:
             app.logger.info(f'Move file {filename} from {from_id} to {to_id} in role {role}')
 
-            # Исправить в будущем, кодировка шалит
-            cursor.execute(f"update registry set directory={to_id if to_id else 'null'} where "
-                           f"directory={from_id if from_id else 'null'} and role='{role}' and name='{filename}'")
+            if from_id:
+                cursor.execute('update registry set directory=%s '
+                               'where directory=%s and role=%s and name=%s',
+                               (to_id, from_id, role, filename))
+            else:
+                cursor.execute('update registry set directory=%s '
+                               'where directory is null and role=%s and name=%s',
+                               (to_id, role, filename))
 
             return {'ok': True}
 

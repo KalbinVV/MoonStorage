@@ -294,7 +294,7 @@ class HTTPApiFilesystem(Operations):
     def unlink(self, path):
         logging.info(f'unlink called for path: {path}')
 
-        # Костыль, позже нужно будет исправить как то
+        # Запрашиваем информацию о файле
         self.getattr(path)
 
         if not self.__files.is_exists(path):
@@ -322,6 +322,9 @@ class HTTPApiFilesystem(Operations):
 
         if not self.__files.is_exists(old):
             raise FuseOSError(errno.ENOENT)
+
+        # Запрашиваем информацию о файле
+        self.getattr(old)
 
         # При попытке переименовать папку
         if stat.S_ISDIR(self.__files[old].st['st_mode']):

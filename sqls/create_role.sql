@@ -4,7 +4,7 @@ revoke all privileges on database ipfs from {role_name};
 
 grant select, delete, update on table registry to {role_name};
 
-grant insert on table registry_data to {role_name};
+grant insert, update on table registry_data to {role_name};
 
 grant select on table user_roles to {role_name};
 
