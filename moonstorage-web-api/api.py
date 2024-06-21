@@ -1,3 +1,4 @@
+import copy
 import datetime
 import json
 import logging
@@ -6,7 +7,7 @@ import pathlib
 import stat
 from functools import wraps
 from time import time
-from typing import Callable, NoReturn
+from typing import Callable, NoReturn, Optional
 
 import psycopg2
 from Crypto.Cipher import AES
@@ -50,12 +51,19 @@ class HelperFuncs:
                               port=connection_args.db_port) as connection:
             with connection.cursor() as cursor:
                 cursor.execute('select distinct name from registry '
-                               'where role=%s', (role_name,))
+                               'where role=%s and directory is null', (role_name,))
 
-                return [file[0] for file in cursor.fetchall()]
+                files = [file[0] for file in cursor.fetchall()]
+
+                cursor.execute('select distinct name from directories '
+                               'where role=%s and parent_directory is null', (role_name,))
+
+                directories = [directory[0] for directory in cursor.fetchall()]
+
+                return files + directories
 
     @staticmethod
-    def get_file_info_by_name(role: str, filename: str) -> dict:
+    def get_file_info_by_name(role: str, filename: str, directory_id: Optional[int] = None) -> dict:
         connection_args = auth_utils.get_connection_args()
 
         with psycopg2.connect(dbname="ipfs",
@@ -66,18 +74,96 @@ class HelperFuncs:
             with connection.cursor() as cursor:
                 app.logger.info(f'Role: {role}\nFile name:{filename}')
 
-                cursor.execute('select file_size, uploaded_at, cid from registry '
-                               'where role=%s and name=%s'
-                               ' order by uploaded_at desc', (role, filename))
+                if directory_id is None:
+                    cursor.execute('select file_size, uploaded_at, cid from registry '
+                                   'where role=%s and name=%s and directory is null'
+                                   ' order by uploaded_at desc', (role, filename))
 
-                found_file = cursor.fetchone()
+                    found_file = cursor.fetchone()
 
-                if not found_file:
-                    raise FileNotFoundError()
+                    if not found_file:
+                        cursor.execute('select id from directories '
+                                       'where role=%s and name=%s and parent_directory is null',
+                                       (role, filename))
 
-                return {'size': found_file[0],
-                        'uploaded_at': found_file[1],
-                        'cid': found_file[2]}
+                        found_directory = cursor.fetchone()
+
+                        if found_directory:
+                            return {
+                                'id': found_directory[0],
+                                'is_dir': True
+                            }
+                        else:
+                            raise FileNotFoundError()
+                    else:
+                        return {'size': found_file[0],
+                                'uploaded_at': found_file[1],
+                                'cid': found_file[2],
+                                'is_dir': False}
+                else:
+                    app.logger.info(f'Trying to find file {filename} inside folder with id: {directory_id}')
+
+                    cursor.execute('select file_size, uploaded_at, cid from registry '
+                                   'where role=%s and name=%s and directory=%s'
+                                   ' order by uploaded_at desc', (role, filename, directory_id))
+
+                    found_file = cursor.fetchone()
+
+                    if not found_file:
+                        cursor.execute('select id from directories '
+                                       'where role=%s and name=%s and parent_directory=%s',
+                                       (role, filename, directory_id))
+
+                        found_directory = cursor.fetchone()
+
+                        if found_directory:
+                            return {
+                                'id': found_directory[0],
+                                'is_dir': True
+                            }
+                        else:
+                            raise FileNotFoundError()
+                    else:
+                        return {'size': found_file[0],
+                                'uploaded_at': found_file[1],
+                                'cid': found_file[2],
+                                'is_dir': False}
+
+    @staticmethod
+    def check_if_directory_exists(role: str, directory_name: str) -> bool:
+        connection_args = auth_utils.get_connection_args()
+
+        with psycopg2.connect(dbname="ipfs",
+                              user=connection_args.username,
+                              password=connection_args.password,
+                              host=connection_args.db_host,
+                              port=connection_args.db_port) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute('select count(*) from directories where role=%s and name=%s',
+                               (role, directory_name))
+
+                return cursor.fetchone()[0] > 0
+
+    @staticmethod
+    def get_directory_id(role: str, directory_name: str, parent_directory: int = None):
+        connection_args = auth_utils.get_connection_args()
+
+        with psycopg2.connect(dbname="ipfs",
+                              user=connection_args.username,
+                              password=connection_args.password,
+                              host=connection_args.db_host,
+                              port=connection_args.db_port) as connection:
+            with connection.cursor() as cursor:
+                if parent_directory is None:
+                    cursor.execute('select id from directories '
+                                   'where role=%s and name=%s and parent_directory is null',
+                                   (role, directory_name))
+                else:
+                    cursor.execute('select id from directories '
+                                   'where role=%s and name=%s and parent_directory=%s',
+                                   (role, directory_name, parent_directory))
+
+                return cursor.fetchone()[0]
 
     @staticmethod
     def check_if_file_is_available_in_ipfs(file_cid: str) -> bool:
@@ -93,6 +179,28 @@ class HelperFuncs:
             return False
 
         return True
+
+    @staticmethod
+    def get_files_in_directory(role: str, directory_id: int):
+        connection_args = auth_utils.get_connection_args()
+
+        with psycopg2.connect(dbname="ipfs",
+                              user=connection_args.username,
+                              password=connection_args.password,
+                              host=connection_args.db_host,
+                              port=connection_args.db_port) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute('select distinct name from registry '
+                               'where role=%s and directory=%s', (role, directory_id))
+
+                files = [file[0] for file in cursor.fetchall()]
+
+                cursor.execute('select distinct name from directories '
+                               'where role=%s and parent_directory=%s', (role, directory_id))
+
+                directories = [directory[0] for directory in cursor.fetchall()]
+
+                return files + directories
 
 
 def get_value_from_form_or_raise_exception(key: str, exception_message: str) -> str | NoReturn:
@@ -183,6 +291,7 @@ def upload_file():
 
     required_role = get_value_from_form_or_raise_exception('role',
                                                            'Укажите роль, с которой добавляете файл!')
+    directory_id = request.form.get('directory_id')
 
     if 'file' not in request.files:
         raise Exception('Файл отсутствует!')
@@ -232,22 +341,17 @@ def upload_file():
             with connection.cursor() as cursor:
                 app.logger.debug(uploaded_file_cid)
 
-                cursor.execute("select count(*) from registry "
-                               "where name=%s and role=%s", (uploaded_filename,
-                                                             required_role))
-
-                amount_of_files = cursor.fetchone()[0]
-
-                app.logger.info(f'Amount of file {uploaded_filename}: {amount_of_files}')
-
-                if amount_of_files == 0:
-                    cursor.execute("insert into registry_data(cid, name, secret_key, role, file_size, file_hash, type) "
-                                   "values(%s, %s, %s, %s, %s, %s, 'file')",
+                if directory_id:
+                    cursor.execute("insert into registry_data(cid, name, secret_key, role, file_size, file_hash, "
+                                   "directory)"
+                                   "values(%s, %s, %s, %s, %s, %s, %s)",
+                                   (uploaded_file_cid, uploaded_filename, psycopg2.Binary(secret_key), required_role,
+                                    uploaded_file_size, file_hash, directory_id))
+                else:
+                    cursor.execute("insert into registry_data(cid, name, secret_key, role, file_size, file_hash) "
+                                   "values(%s, %s, %s, %s, %s, %s)",
                                    (uploaded_file_cid, uploaded_filename, psycopg2.Binary(secret_key), required_role,
                                     uploaded_file_size, file_hash))
-                else:
-                    cursor.execute("update registry set cid=%s, file_size=%s, secret_key=%s",
-                                   (uploaded_file_cid, uploaded_file_size, secret_key))
 
                 return {'cid': uploaded_file_cid,
                         'size': uploaded_file_size,
@@ -318,35 +422,43 @@ def fuse_get_file():
 
     path_parts = file_path[1:].split('/')
 
-    default_dict_for_folder = {
-        'st': {
-            'st_mode': stat.S_IFDIR | 0o755,
-            'st_nlink': 2,
-            'sn_size': 4096,
-            'st_ctime': time(),  # Время создания
-            'st_mtime': time(),  # Время последнего изменения
-            'st_atime': time(),  # Время последнего доступа
-        },
-        'cid': None
-    }
+    def _make_default_dict_for_folder(directory_id: Optional[int] = None):
+        return {
+            'st': {
+                'st_mode': stat.S_IFDIR | 0o755,
+                'st_nlink': 2,
+                'sn_size': 4096,
+                'st_ctime': time(),  # Время создания
+                'st_mtime': time(),  # Время последнего изменения
+                'st_atime': time(),  # Время последнего доступа
+            },
+            'cid': None,
+            'id': directory_id
+        }
+
+    app.logger.info(path_parts)
 
     if file_path == '/':
-        return default_dict_for_folder
+        return _make_default_dict_for_folder()
     elif len(path_parts) == 1:
         roles = HelperFuncs.get_user_roles()
 
         if path_parts[0] in roles:
-            return default_dict_for_folder
+            return _make_default_dict_for_folder()
         else:
             return 'Only roles is allowed by /', 404
     else:
         role = path_parts[0]
-        filename = path_parts[1]
+        file_name = path_parts[-1]
+        search_directory_id = request.args.get('directory_id')
 
         app.logger.info(f'Path parts: {path_parts}')
 
         try:
-            file_info = HelperFuncs.get_file_info_by_name(role, filename)
+            file_info = HelperFuncs.get_file_info_by_name(role, file_name, search_directory_id)
+
+            if file_info['is_dir']:
+                return _make_default_dict_for_folder(file_info['id'])
         except (FileNotFoundError,):
             return '', 404
 
@@ -359,18 +471,31 @@ def fuse_get_file():
                 'st_mtime': time(),  # Время последнего изменения
                 'st_atime': time(),  # Время последнего доступа
             },
-            'cid': file_info['cid']
+            'cid': file_info['cid'],
+            'id': None,
         }
 
 
 @app.route('/fuse/dir/read/', defaults={'dir_name': None})
-@app.route('/fuse/dir/read/<dir_name>')
+@app.route('/fuse/dir/read/')
 @auth_decorators.auth_required
-def fuse_read_dir(dir_name: str):
-    if dir_name is None:
+def fuse_read_dir():
+    dir_path = request.form.get('path')
+
+    if dir_path == '/':
         return HelperFuncs.get_user_roles()
+
+    dir_path_parts = dir_path[1:].split('/')
+
+    if len(dir_path_parts) == 1:
+        logging.info(dir_path_parts[0])
+
+        return HelperFuncs.get_files_in_role(dir_path_parts[0])
     else:
-        return HelperFuncs.get_files_in_role(dir_name)
+        role = dir_path_parts[0]
+        directory_id = int(request.form.get('directory_id'))
+
+        return HelperFuncs.get_files_in_directory(role, directory_id)
 
 
 @app.route('/fuse/file/exists')
@@ -379,6 +504,8 @@ def fuse_check_file_exists():
     file_path = request.args.get('path')
 
     path_parts = file_path[1:].split('/')
+
+    directory_id = request.args.get('directory_id')
 
     if len(path_parts) == 1:
         return False
@@ -391,8 +518,14 @@ def fuse_check_file_exists():
                           host=connection_args.db_host,
                           port=connection_args.db_port) as connection:
         with connection.cursor() as cursor:
-            cursor.execute("select file_size from registry where role=%s and name=%s",
-                           (path_parts[0], path_parts[1]))
+            if not directory_id:
+                cursor.execute("select file_size from registry "
+                               "where role=%s and name=%s and directory is null",
+                               (path_parts[0], path_parts[-1]))
+            else:
+                cursor.execute("select file_size from registry "
+                               "where role=%s and name=%s and directory=%s",
+                               (path_parts[0], path_parts[-1], directory_id))
 
             found_file = cursor.fetchone()
 
@@ -407,7 +540,11 @@ def fuse_check_file_exists():
 def remove_file():
     connection_args = auth_utils.get_connection_args()
 
-    role, filename = request.form.get('path')[1:].split('/')
+    args = request.form.get('path')[1:].split('/')
+
+    role, filename = args[0], args[-1]
+
+    directory_id = request.form.get('directory_id')
 
     with psycopg2.connect(dbname='ipfs',
                           user=connection_args.username,
@@ -415,7 +552,95 @@ def remove_file():
                           host=connection_args.db_host,
                           port=connection_args.db_port) as connection:
         with connection.cursor() as cursor:
-            cursor.execute('delete from registry where role=%s and name=%s', (role, filename))
+            if directory_id:
+                cursor.execute('delete from registry '
+                               'where role=%s and name=%s and directory=%s',
+                               (role, filename, directory_id))
+            else:
+                cursor.execute('delete from registry '
+                               'where role=%s and name=%s and directory is null',
+                               (role, filename))
+
+            return {'ok': True}
+
+
+@app.route('/mkdir', methods=['POST'])
+@auth_decorators.auth_required
+def create_dir():
+    connection_args = auth_utils.get_connection_args()
+
+    path_parts = request.form.get('path')[1:].split('/')
+
+    role, directory_path_parts = path_parts[0], path_parts[1]
+
+    with psycopg2.connect(dbname='ipfs',
+                          user=connection_args.username,
+                          password=connection_args.password,
+                          host=connection_args.db_host,
+                          port=connection_args.db_port) as connection:
+        with connection.cursor() as cursor:
+            if len(path_parts) == 1:
+                cursor.execute('insert into directories_data(role, name) values(%s, %s)',
+                               (role, path_parts[0]))
+            else:
+                directory_id = request.form.get('directory_id')
+
+                logging.info(f'Trying to create folder: {directory_path_parts} with parent id: {directory_id}')
+
+                cursor.execute('insert into directories_data(role, name, parent_directory) values(%s, %s, %s)',
+                               (role, path_parts[-1], directory_id))
+
+            return {'ok': True}
+
+
+@app.route('/rename_dir', methods=['PUT'])
+@auth_decorators.auth_required
+def rename_dir():
+    connection_args = auth_utils.get_connection_args()
+
+    new_name = request.form.get('new').split('/')[-1]
+    directory_id = request.form.get('directory_id')
+
+    with psycopg2.connect(dbname='ipfs',
+                          user=connection_args.username,
+                          password=connection_args.password,
+                          host=connection_args.db_host,
+                          port=connection_args.db_port) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute('update directories set name=%s where id=%s',
+                           (new_name, directory_id))
+
+            return {'ok': True}
+
+
+@app.route('/move', methods=['POST'])
+@auth_decorators.auth_required
+def move():
+    connection_args = auth_utils.get_connection_args()
+
+    args = request.args.get('filename')[1:].split('/')
+
+    role, filename = args[0], args[-1]
+
+    from_id = request.args.get('from_id')
+    to_id = request.args.get('to_id')
+
+    with psycopg2.connect(dbname='ipfs',
+                          user=connection_args.username,
+                          password=connection_args.password,
+                          host=connection_args.db_host,
+                          port=connection_args.db_port) as connection:
+        with connection.cursor() as cursor:
+            app.logger.info(f'Move file {filename} from {from_id} to {to_id} in role {role}')
+
+            if from_id:
+                cursor.execute('update registry set directory=%s '
+                               'where directory=%s and role=%s and name=%s',
+                               (to_id, from_id, role, filename))
+            else:
+                cursor.execute('update registry set directory=%s '
+                               'where directory is null and role=%s and name=%s',
+                               (to_id, role, filename))
 
             return {'ok': True}
 
@@ -425,8 +650,12 @@ def remove_file():
 def rename_file():
     connection_args = auth_utils.get_connection_args()
 
-    role, filename = request.form.get('old')[1:].split('/')
-    new_name = request.form.get('new')[1:].split('/')[1]
+    args = request.args.get('old')[1:].split('/')
+
+    role, filename = args[0], args[-1]
+    new_name = request.args.get('new')[1:].split('/')[-1]
+
+    directory_id = request.args.get('directory_id')
 
     with psycopg2.connect(dbname='ipfs',
                           user=connection_args.username,
@@ -434,8 +663,33 @@ def rename_file():
                           host=connection_args.db_host,
                           port=connection_args.db_port) as connection:
         with connection.cursor() as cursor:
-            cursor.execute('update registry set name=%s '
-                           'where role=%s and name=%s', (new_name, role, filename))
+            if directory_id:
+                cursor.execute('update registry set name=%s '
+                               'where role=%s and name=%s and directory=%s',
+                               (new_name, role, filename, directory_id))
+            else:
+                cursor.execute('update registry set name=%s '
+                               'where role=%s and name=%s and directory is null',
+                               (new_name, role, filename))
+
+            return {'ok': True}
+
+
+@app.route('/rmdir', methods=['POST'])
+@auth_decorators.auth_required
+def rm_dir():
+    connection_args = auth_utils.get_connection_args()
+
+    directory_id = request.form.get('directory_id')
+
+    with psycopg2.connect(dbname='ipfs',
+                          user=connection_args.username,
+                          password=connection_args.password,
+                          host=connection_args.db_host,
+                          port=connection_args.db_port) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute('delete from directories where id=%s',
+                           (directory_id,))
 
             return {'ok': True}
 
